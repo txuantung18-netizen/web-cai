@@ -1,25 +1,21 @@
-
- // ==UserScript==
- // @name         IOE / VioEdu / Violympic AI Assistant
- // @namespace    https://ioe.vn/
- // @version      10.2.0
- // @description  Screenshot, image transcription with Groq Vision, chat and question extraction
- // @match        *://ioe.vn/*
- // @match        *://*.ioe.vn/*
- // @match        *://vio.edu.vn/*
- // @match        *://*.vio.edu.vn/*
- // @match        *://violympic.vn/*
- // @match        *://*.violympic.vn/*
- // @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
- // @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js
- // @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js
- // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
- // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
- // @run-at       document-idle
- // @noframes
- // @grant        none
- // ==/UserScript==
-
+// ==UserScript==
+// @name         IOE / VioEdu / Violympic AI Assistant V10.1 - Auth + Scraper + Vision
+// @namespace    https://ioe.vn/
+// @version      10.2.0
+// @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
+// @match        *://ioe.vn/*
+// @match        *://*.ioe.vn/*
+// @match        *://vio.edu.vn/*
+// @match        *://*.vio.edu.vn/*
+// @match        *://violympic.vn/*
+// @match        *://*.violympic.vn/*
+// @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
+// @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js
+// @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js
+// @run-at       document-idle
+// @noframes
+// @grant        none
+// ==/UserScript==
 
 (function () {
     'use strict';
@@ -31,6 +27,8 @@
 
     const BACKEND_URL = 'https://api-groq-two.vercel.app';
     const TOKEN_KEY = 'ioe_ai_auth_token';
+    const AUTH_LOCK_KEY = 'ioe_ai_auth_lock_until';
+    const AUTH_LOCK_MS = 24 * 60 * 60 * 1000;
 
     const MODELS = [
         ['openai/gpt-oss-120b', 'GPT-OSS 120B'],
@@ -107,8 +105,62 @@
     };
 
     function renderMath(el) {
-        if (typeof renderMathInElement !== 'function') return;
-        try { renderMathInElement(el, KATEX_OPTS); } catch (_) {}
+        if (typeof renderMathInElement !== 'function') {
+            renderMathFallback(el);
+            return;
+        }
+        // Auto-rendering the whole message at once lets one malformed formula
+        // abort rendering every formula that follows it. Isolate paragraphs and
+        // list/table cells so a bad expression cannot hide the rest of the math.
+        const chunks = el.querySelectorAll('p, li, td, th, h1, h2, h3, h4, h5, h6, blockquote');
+        if (!chunks.length) {
+            try { renderMathInElement(el, KATEX_OPTS); } catch (_) { renderMathFallback(el); }
+            renderMathFallback(el);
+            return;
+        }
+        chunks.forEach(chunk => {
+            try { renderMathInElement(chunk, KATEX_OPTS); } catch (_) { renderMathFallback(chunk); }
+            // Catch formulas auto-render left untouched, while skipping formulas
+            // already converted into KaTeX markup.
+            renderMathFallback(chunk);
+        });
+    }
+
+    function renderMathFallback(root) {
+        if (typeof katex === 'undefined' || typeof katex.renderToString !== 'function') return;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (!node.nodeValue || !/\\\[|\\\(|\$\$|\$[^$\n]+\$/.test(node.nodeValue)) continue;
+            if (node.parentElement && node.parentElement.closest('pre, code, textarea, script, style, .katex')) continue;
+            nodes.push(node);
+        }
+        const delimiter = /\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$\$([\s\S]+?)\$\$|\$([^$\n]+)\$/g;
+        nodes.forEach(node => {
+            const source = node.nodeValue;
+            delimiter.lastIndex = 0;
+            let match, cursor = 0, found = false;
+            const fragment = document.createDocumentFragment();
+            while ((match = delimiter.exec(source))) {
+                found = true;
+                if (match.index > cursor) fragment.appendChild(document.createTextNode(source.slice(cursor, match.index)));
+                const displayMode = match[1] !== undefined || match[3] !== undefined;
+                const latex = match[1] ?? match[2] ?? match[3] ?? match[4];
+                const span = document.createElement('span');
+                try {
+                    span.innerHTML = katex.renderToString(latex.trim(), { ...KATEX_OPTS, displayMode, output: 'html' });
+                    fragment.appendChild(span);
+                } catch (_) {
+                    fragment.appendChild(document.createTextNode(match[0]));
+                }
+                cursor = delimiter.lastIndex;
+            }
+            if (found) {
+                if (cursor < source.length) fragment.appendChild(document.createTextNode(source.slice(cursor)));
+                node.parentNode.replaceChild(fragment, node);
+            }
+        });
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -117,7 +169,11 @@
     const SCRAPER_SELECTORS = {
         questionBlocks: [
             '.panel.panel-question', '.panel-question',
-            '[id^="MathjaxArea"] .panel-question', '.box--practice__content'
+            '[id^="MathjaxArea"] .panel-question', '.box--practice__content',
+            '.panel-body-question',
+            // New question-bank layout: the MathJax area itself is the question
+            // container, with prompt and answer grid as sibling children.
+            '.panel-question-bank', '[id^="MathjaxArea"][class*="panel-question-bank"]'
         ],
         questionText: [
             '.padding-question-text', '.panel-body-question .padding-question-text',
@@ -255,7 +311,7 @@
         if (!blocks.length) return results;
 
         blocks.forEach((block, idx) => {
-            if (block.parentElement && block.parentElement.closest('.panel-question, .box--practice__content')) return;
+            if (block.parentElement && block.parentElement.closest('.panel-question, .panel-body-question, .box--practice__content, .panel-question-bank')) return;
             if (region) {
                 const br = block.getBoundingClientRect();
                 const intersects = !(br.right < region.x || br.left > region.x + region.w ||
@@ -562,6 +618,9 @@
               #head > div:last-child { display:flex;gap:4px;align-items:center; }
               #head button {border:0;background:transparent;color:#fff;font-size:20px;cursor:pointer;padding:0 4px;}
               #advancedControls .row { margin-top:3px; }
+              #settingsPanel { margin:2px 0 5px; padding:5px 8px; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa; }
+              #settingsPanel summary { cursor:pointer; color:#444; font-size:12px; font-weight:600; }
+              #settingsPanel .chk { margin-top:6px; }
               #logoutBtn { font-size:16px !important; opacity:0.85; }
               #logoutBtn:hover { opacity:1; }
               #messages {flex:1;min-height:0;overflow:auto;padding:12px;background:#f7f7f8}
@@ -627,6 +686,12 @@
                 <div id="inputArea">
                   <img id="preview" alt="">
                   <div id="status">Screenshot ? Groq Vision transcription ? question scraper ? Ctrl+V to paste an image.</div>
+                  <details id="settingsPanel">
+                    <summary>Cài đặt</summary>
+                    <label class="chk" title="Add the assistant behavior instructions to each chat request">
+                      <input type="checkbox" id="systemPromptToggle"> <span>Dùng system prompt</span>
+                    </label>
+                  </details>
                   <div id="advancedControls">
                   <div class="row">
                     <span class="lbl">Model:</span>
@@ -681,7 +746,7 @@
             const lockView = $('lockView'), appView = $('appView');
             const lockMsg = $('lockMsg'), codeInput = $('codeInput'), unlockBtn = $('unlockBtn');
             const panel = $('panel'), messages = $('messages'), question = $('question');
-            const preview = $('preview'), modelSel = $('modelSel'), visionSel = $('visionSel'), imageModeSel = $('imageModeSel'), multiAgentEl = $('multiAgent'), multiAgentRoundsEl = $('multiAgentRounds');
+            const preview = $('preview'), modelSel = $('modelSel'), visionSel = $('visionSel'), imageModeSel = $('imageModeSel'), multiAgentEl = $('multiAgent'), multiAgentRoundsEl = $('multiAgentRounds'), systemPromptEl = $('systemPromptToggle');
 
             if (!lockView || !appView) {
                 showFatal('Không tìm thấy lockView/appView — innerHTML có thể lỗi');
@@ -696,8 +761,14 @@
                 try { lockView.classList.add('visible'); } catch (_) {}
                 try { appView.style.display = 'none'; } catch (_) {}
                 try { codeInput.value = ''; } catch (_) {}
-                try { lockMsg.textContent = ''; lockMsg.classList.remove('ok'); } catch (_) {}
-                setTimeout(() => { try { codeInput.focus(); } catch (_) {} }, 150);
+                const locallyLocked = (Number(localStorage.getItem(AUTH_LOCK_KEY)) || 0) > Date.now();
+                try {
+                    codeInput.disabled = locallyLocked;
+                    unlockBtn.disabled = locallyLocked;
+                    lockMsg.textContent = locallyLocked ? TOO_MANY_ATTEMPTS : '';
+                    lockMsg.classList.remove('ok');
+                } catch (_) {}
+                if (!locallyLocked) setTimeout(() => { try { codeInput.focus(); } catch (_) {} }, 150);
                 console.log('[IOE AI V10.1] Hiện lock view');
             }
 
@@ -719,7 +790,35 @@
                 }
             }
 
+            const TOO_MANY_ATTEMPTS = 'B\u1ea1n \u0111\u00e3 th\u1eed qu\u00e1 nhi\u1ec1u l\u1ea7n';
+            let authLockTimer = null;
+            function clearLocalAuthLock() {
+                try { localStorage.removeItem(AUTH_LOCK_KEY); } catch (_) {}
+                if (authLockTimer) clearTimeout(authLockTimer);
+                authLockTimer = null;
+                codeInput.disabled = false;
+                unlockBtn.disabled = false;
+                if (lockMsg.textContent === TOO_MANY_ATTEMPTS) lockMsg.textContent = '';
+            }
+            function applyLocalAuthLock(until) {
+                try { localStorage.setItem(AUTH_LOCK_KEY, String(until)); } catch (_) {}
+                codeInput.disabled = true;
+                unlockBtn.disabled = true;
+                lockMsg.textContent = TOO_MANY_ATTEMPTS;
+                lockMsg.classList.remove('ok');
+                if (authLockTimer) clearTimeout(authLockTimer);
+                authLockTimer = setTimeout(clearLocalAuthLock, Math.max(0, until - Date.now()));
+            }
+            const savedLockUntil = Number(localStorage.getItem(AUTH_LOCK_KEY)) || 0;
+            if (savedLockUntil > Date.now()) applyLocalAuthLock(savedLockUntil);
+            else if (savedLockUntil) clearLocalAuthLock();
+
             async function doUnlock() {
+                const localLockUntil = Number(localStorage.getItem(AUTH_LOCK_KEY)) || 0;
+                if (localLockUntil > Date.now()) {
+                    lockMsg.textContent = TOO_MANY_ATTEMPTS;
+                    return;
+                }
                 const code = codeInput.value.trim();
                 if (!code) {
                     lockMsg.textContent = 'Vui lòng nhập mã.';
@@ -740,14 +839,8 @@
                     const data = await res.json().catch(() => ({}));
 
                     if (res.status === 429) {
-                        const retry = Number(data.retryAfter) || 60;
-                        const mins = Math.ceil(retry / 60);
-                        const seconds = retry % 60;
-                        let timeText;
-                        if (retry < 60) timeText = `${retry} giây`;
-                        else if (seconds === 0) timeText = `${mins} phút`;
-                        else timeText = `${mins} phút ${seconds} giây`;
-                        lockMsg.textContent = `⏳ Bạn đã thử quá nhiều lần. Vui lòng thử lại sau ${timeText}.`;
+                        if (data.limitType === 'lockout') applyLocalAuthLock(Date.now() + AUTH_LOCK_MS);
+                        else lockMsg.textContent = TOO_MANY_ATTEMPTS;
                         lockMsg.classList.remove('ok');
                         return;
                     }
@@ -765,7 +858,9 @@
                     lockMsg.textContent = '❌ ' + (e.message || 'Không thể kết nối server');
                     lockMsg.classList.remove('ok');
                 } finally {
-                    unlockBtn.disabled = false;
+                    const stillLocked = (Number(localStorage.getItem(AUTH_LOCK_KEY)) || 0) > Date.now();
+                    codeInput.disabled = stillLocked;
+                    unlockBtn.disabled = stillLocked;
                     unlockBtn.textContent = 'Xác nhận';
                 }
             }
@@ -806,6 +901,8 @@
             imageModeSel.addEventListener('change', () => localStorage.setItem('ioeai_image_mode', imageModeSel.value));
             multiAgentEl.checked = readFlag('ioeai_multi_agent', false);
             multiAgentEl.addEventListener('change', () => writeFlag('ioeai_multi_agent', multiAgentEl.checked));
+            systemPromptEl.checked = readFlag('ioeai_system_prompt', true);
+            systemPromptEl.addEventListener('change', () => writeFlag('ioeai_system_prompt', systemPromptEl.checked));
             const savedRounds = localStorage.getItem('ioeai_multi_agent_rounds');
             multiAgentRoundsEl.value = savedRounds === '2' ? '2' : '1';
             multiAgentRoundsEl.addEventListener('change', () => localStorage.setItem('ioeai_multi_agent_rounds', multiAgentRoundsEl.value));
@@ -922,8 +1019,9 @@
             function addMessage(role, text) {
                 const d = document.createElement('div');
                 d.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
-                if (role === 'assistant') renderAssistantMessage(d, text);
-                else d.textContent = text;
+                // Scraped questions and user-entered prompts can contain LaTeX too.
+                // Render both roles consistently so `$...$` is never shown raw.
+                renderAssistantMessage(d, text);
                 messages.appendChild(d);
                 messages.scrollTop = messages.scrollHeight;
                 return d;
@@ -1189,7 +1287,7 @@
                 controller = new AbortController();
 
                 const messagesForBackend = [
-                    { role: 'system', content: SYSTEM_PROMPT },
+                    ...(systemPromptEl.checked ? [{ role: 'system', content: SYSTEM_PROMPT }] : []),
                     ...history.slice(-CHAT_CONTEXT_MAX),
                     { role: 'user', content: typeof userContent === 'string' ? userContent : '' },
                 ];
