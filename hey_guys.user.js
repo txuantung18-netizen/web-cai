@@ -620,9 +620,6 @@
               #head > div:last-child { display:flex;gap:4px;align-items:center; }
               #head button {border:0;background:transparent;color:#fff;font-size:20px;cursor:pointer;padding:0 4px;}
               #advancedControls .row { margin-top:3px; }
-              #settingsPanel { margin:2px 0 5px; padding:5px 8px; border:1px solid #e5e7eb; border-radius:8px; background:#fafafa; }
-              #settingsPanel summary { cursor:pointer; color:#444; font-size:12px; font-weight:600; }
-              #settingsPanel .chk { margin-top:6px; }
               #logoutBtn { font-size:16px !important; opacity:0.85; }
               #logoutBtn:hover { opacity:1; }
               #messages {flex:1;min-height:0;overflow:auto;padding:12px;background:#f7f7f8}
@@ -688,12 +685,6 @@
                 <div id="inputArea">
                   <img id="preview" alt="">
                   <div id="status">Screenshot ? Groq Vision transcription ? question scraper ? Ctrl+V to paste an image.</div>
-                  <details id="settingsPanel">
-                    <summary>Cài đặt</summary>
-                    <label class="chk" title="Add the assistant behavior instructions to each chat request">
-                      <input type="checkbox" id="systemPromptToggle"> <span>Dùng system prompt</span>
-                    </label>
-                  </details>
                   <div id="advancedControls">
                   <div class="row">
                     <span class="lbl">Model:</span>
@@ -748,7 +739,7 @@
             const lockView = $('lockView'), appView = $('appView');
             const lockMsg = $('lockMsg'), codeInput = $('codeInput'), unlockBtn = $('unlockBtn');
             const panel = $('panel'), messages = $('messages'), question = $('question');
-            const preview = $('preview'), modelSel = $('modelSel'), visionSel = $('visionSel'), imageModeSel = $('imageModeSel'), multiAgentEl = $('multiAgent'), multiAgentRoundsEl = $('multiAgentRounds'), systemPromptEl = $('systemPromptToggle');
+            const preview = $('preview'), modelSel = $('modelSel'), visionSel = $('visionSel'), imageModeSel = $('imageModeSel'), multiAgentEl = $('multiAgent'), multiAgentRoundsEl = $('multiAgentRounds');
 
             if (!lockView || !appView) {
                 showFatal('Không tìm thấy lockView/appView — innerHTML có thể lỗi');
@@ -903,8 +894,6 @@
             imageModeSel.addEventListener('change', () => localStorage.setItem('ioeai_image_mode', imageModeSel.value));
             multiAgentEl.checked = readFlag('ioeai_multi_agent', false);
             multiAgentEl.addEventListener('change', () => writeFlag('ioeai_multi_agent', multiAgentEl.checked));
-            systemPromptEl.checked = readFlag('ioeai_system_prompt', true);
-            systemPromptEl.addEventListener('change', () => writeFlag('ioeai_system_prompt', systemPromptEl.checked));
             const savedRounds = localStorage.getItem('ioeai_multi_agent_rounds');
             multiAgentRoundsEl.value = savedRounds === '2' ? '2' : '1';
             multiAgentRoundsEl.addEventListener('change', () => localStorage.setItem('ioeai_multi_agent_rounds', multiAgentRoundsEl.value));
@@ -1289,7 +1278,7 @@
                 controller = new AbortController();
 
                 const messagesForBackend = [
-                    ...(systemPromptEl.checked ? [{ role: 'system', content: SYSTEM_PROMPT }] : []),
+                    { role: 'system', content: SYSTEM_PROMPT },
                     ...history.slice(-CHAT_CONTEXT_MAX),
                     { role: 'user', content: typeof userContent === 'string' ? userContent : '' },
                 ];
