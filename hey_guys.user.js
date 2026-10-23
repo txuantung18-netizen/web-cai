@@ -1,21 +1,25 @@
-// ==UserScript==
-// @name         IOE / VioEdu / Violympic AI Assistant V10.1 - Auth + Scraper + Vision
-// @namespace    https://ioe.vn/
-// @version      10.2.0
-// @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
-// @match        *://ioe.vn/*
-// @match        *://*.ioe.vn/*
-// @match        *://vio.edu.vn/*
-// @match        *://*.vio.edu.vn/*
-// @match        *://violympic.vn/*
-// @match        *://*.violympic.vn/*
-// @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
-// @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js
-// @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js
-// @run-at       document-idle
-// @noframes
-// @grant        none
-// ==/UserScript==
+
+ // ==UserScript==
+ // @name         IOE / VioEdu / Violympic AI Assistant
+ // @namespace    https://ioe.vn/
+ // @version      10.2.0
+ // @description  Screenshot, image transcription with Groq Vision, chat and question extraction
+ // @match        *://ioe.vn/*
+ // @match        *://*.ioe.vn/*
+ // @match        *://vio.edu.vn/*
+ // @match        *://*.vio.edu.vn/*
+ // @match        *://violympic.vn/*
+ // @match        *://*.violympic.vn/*
+ // @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
+ // @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js
+ // @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js
+ // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
+ // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
+ // @run-at       document-idle
+ // @noframes
+ // @grant        none
+ // ==/UserScript==
+
 
 (function () {
     'use strict';
