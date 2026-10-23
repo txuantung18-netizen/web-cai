@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IOE / VioEdu / Violympic AI Assistant V10.1 - Auth + Scraper + Vision
 // @namespace    https://ioe.vn/
-// @version      10.2.0
+// @version      10.2.1
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -37,7 +37,8 @@
         ['qwen/qwen3.8-27b', 'Qwen 3.8 27B'],
         ['openai/gpt-oss-20b', 'GPT-OSS 20B'],
     ];
-    const DEFAULT_MODEL = MODELS[0][0];
+    // Keep the dropdown order unchanged, but use Qwen as the initial model.
+    const DEFAULT_MODEL = 'qwen/qwen3.8-27b';
     const MULTI_AGENT_DAILY_LIMIT = 3;
     const CHAT_HISTORY_KEY = 'ioeai_chat_history_v1';
     const CHAT_HISTORY_MAX = 40;
@@ -665,7 +666,7 @@
               <div id="lockBox">
                 <div id="lockTitle">🔒 Trợ lý AI IOE</div>
                 <div id="lockSub">Vui lòng nhập mã khóa để sử dụng. Phiên đăng nhập được lưu 30 ngày.</div>
-                <input type="password" id="codeInput" placeholder="Nhập mã khóa..." autocomplete="off" spellcheck="false">
+                <input type="password" id="codeInput" name="ioe_ai_access_code" placeholder="Nhập mã khóa..." autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" spellcheck="false">
                 <button id="unlockBtn">Xác nhận</button>
                 <div id="lockMsg"></div>
               </div>
@@ -1151,19 +1152,48 @@
             }
 
             // ── SCREENSHOT ────────────────────────────────────
+            async function captureGameCanvasFrame() {
+                const gameCanvas = document.getElementById('GameCanvas');
+                if (!(gameCanvas instanceof HTMLCanvasElement) || !gameCanvas.width || !gameCanvas.height) return null;
+                // Capture in the next animation frame while the latest game frame
+                // is available in the WebGL canvas drawing buffer.
+                const dataUrl = await new Promise(resolve => {
+                    requestAnimationFrame(() => {
+                        try { resolve(gameCanvas.toDataURL('image/png')); }
+                        catch (_) { resolve(null); }
+                    });
+                });
+                if (!dataUrl || dataUrl === 'data:,') return null;
+                const image = new Image();
+                image.src = dataUrl;
+                try { await image.decode(); } catch (_) { return null; }
+                return { image, rect: gameCanvas.getBoundingClientRect() };
+            }
+
+            async function overlayGameCanvasFrame(target) {
+                const frame = await captureGameCanvasFrame();
+                if (!frame || !frame.rect.width || !frame.rect.height) return;
+                const sx = target.width / innerWidth, sy = target.height / innerHeight;
+                target.getContext('2d').drawImage(frame.image,
+                    frame.rect.left * sx, frame.rect.top * sy,
+                    frame.rect.width * sx, frame.rect.height * sy);
+            }
+
             async function takeShot() {
                 root.style.visibility = 'hidden';
                 await wait(200);
                 try {
                     if (typeof html2canvas === 'function') {
                         try {
-                            return await html2canvas(document.documentElement, {
+                            const shot = await html2canvas(document.documentElement, {
                                 useCORS: true, logging: false, backgroundColor: '#ffffff',
                                 scale: Math.min(window.devicePixelRatio || 1, 2),
                                 x: window.scrollX, y: window.scrollY,
                                 width: window.innerWidth, height: window.innerHeight,
                                 ignoreElements: el => el === root
                             });
+                            await overlayGameCanvasFrame(shot);
+                            return shot;
                         } catch (_) {}
                     }
                     const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -1176,6 +1206,7 @@
                         const c = document.createElement('canvas');
                         c.width = v.videoWidth; c.height = v.videoHeight;
                         c.getContext('2d').drawImage(v, 0, 0);
+                        await overlayGameCanvasFrame(c);
                         return c;
                     } finally {
                         stream.getTracks().forEach(t => t.stop());
