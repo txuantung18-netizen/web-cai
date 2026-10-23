@@ -3,6 +3,8 @@
 // @namespace    https://ioe.vn/
 // @version      10.2.0
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
+// @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
+// @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @match        *://ioe.vn/*
 // @match        *://*.ioe.vn/*
 // @match        *://vio.edu.vn/*
