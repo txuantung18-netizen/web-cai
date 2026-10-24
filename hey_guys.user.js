@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      10.2.7
+// @version      10.3.0
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -16,7 +16,8 @@
 // @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js
 // @run-at       document-idle
 // @noframes
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
 // ==/UserScript==
 
 (function () {
@@ -28,9 +29,40 @@
     console.log('[IOE AI V10.1] Script bắt đầu load...');
 
     const BACKEND_URL = 'https://api-groq-two.vercel.app';
-    const TOKEN_KEY = 'ioe_ai_auth_token';
+    const TOKEN_KEY = 'ioe_ai_auth_token_v2';
+    const DEVICE_ID_KEY = 'ioe_ai_installation_id_v1';
     const AUTH_LOCK_KEY = 'ioe_ai_auth_lock_until';
     const AUTH_LOCK_MS = 24 * 60 * 60 * 1000;
+
+    let deviceIdPromise;
+    function makeDeviceId() {
+        if (crypto.randomUUID) return crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = crypto.getRandomValues(new Uint8Array(1))[0] & 15;
+            return (c === 'x' ? r : (r & 3) | 8).toString(16);
+        });
+    }
+    function getInstallationId() {
+        if (!deviceIdPromise) deviceIdPromise = (async () => {
+            const valid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
+            let id = '';
+            try {
+                if (typeof GM_getValue === 'function') id = await GM_getValue(DEVICE_ID_KEY, '');
+            } catch (_) {}
+            if (!valid(id)) {
+                try { id = localStorage.getItem(DEVICE_ID_KEY) || ''; } catch (_) {}
+            }
+            if (!valid(id)) id = makeDeviceId();
+            try {
+                if (typeof GM_setValue === 'function') await GM_setValue(DEVICE_ID_KEY, id);
+                else localStorage.setItem(DEVICE_ID_KEY, id);
+            } catch (_) {
+                try { localStorage.setItem(DEVICE_ID_KEY, id); } catch (_) {}
+            }
+            return id;
+        })();
+        return deviceIdPromise;
+    }
 
     const MODELS = [
         ['openai/gpt-oss-120b', 'GPT-OSS 120B'],
@@ -762,8 +794,9 @@
                   </nav>
                   <div id="infoBody">
                     <section class="infoSection active" id="info-updates">
-                      <h3>Bản hiện tại 10.2.7</h3>
+                      <h3>Bản hiện tại 10.3.0</h3>
                       <ul>
+                        <li>Mỗi mã truy cập được khóa với một cài đặt userscript; phiên đăng nhập cũng được xác minh theo cài đặt đó.</li>
                         <li>Nhận diện hộp thoại câu hỏi Violympic và gửi trọn câu hỏi cùng đáp án ảnh qua Vision từ nút “Lấy cả trang”.</li>
                         <li>Cải thiện chụp GameCanvas trên IOE và nhận diện một số bố cục câu hỏi VioEdu.</li>
                         <li>Sửa hiển thị LaTeX và điều chỉnh AI theo ngôn ngữ, môn học của đề.</li>
@@ -790,6 +823,7 @@
                       <h3>Điều khoản sử dụng</h3>
                       <ol>
                         <li>Công cụ dành cho tự học, ôn tập và tham khảo; không sử dụng trong bài thi hoặc hoạt động bị cấm công cụ hỗ trợ.</li>
+                        <li>Mỗi mã truy cập chỉ gắn với một cài đặt userscript. Khi đổi máy hoặc làm mất hồ sơ trình duyệt, liên hệ hỗ trợ để đặt lại thiết bị.</li>
                         <li>AI có thể đọc sai đề hoặc trả lời sai. Người dùng cần tự kiểm tra lời giải và đáp án.</li>
                         <li>Không chia sẻ mã truy cập. Câu hỏi và ảnh gửi lên sẽ được xử lý qua server của dịch vụ và nhà cung cấp AI.</li>
                         <li>Dịch vụ, model và tính năng có thể thay đổi hoặc tạm ngừng; không cam kết hoạt động liên tục hay kết quả luôn chính xác.</li>
@@ -890,10 +924,11 @@
                 lockMsg.classList.remove('ok');
 
                 try {
+                    const deviceId = await getInstallationId();
                     const res = await fetch(BACKEND_URL + '/api/auth', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ code }),
+                        body: JSON.stringify({ code, deviceId }),
                     });
                     const data = await res.json().catch(() => ({}));
 
@@ -1364,6 +1399,7 @@
                 const headers = { 'Content-Type': 'application/json' };
                 const token = getToken();
                 if (token) headers['Authorization'] = 'Bearer ' + token;
+                headers['X-Device-ID'] = await getInstallationId();
                 return fetch(BACKEND_URL + path, {
                     method: 'POST',
                     headers,
@@ -1421,6 +1457,7 @@
                     const headers = { 'Content-Type': 'application/json' };
                     const token = getToken();
                     if (token) headers['Authorization'] = 'Bearer ' + token;
+                    headers['X-Device-ID'] = await getInstallationId();
 
                     const response = await fetch(BACKEND_URL + '/api/chat', {
                         method: 'POST',
