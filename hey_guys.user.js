@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      10.4.0
+// @version      10.5.2
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -80,9 +80,25 @@
         ['qwen/qwen3.8-27b', 'Qwen 3.8 27B Vision'],
     ];
 
-    const SYSTEM_PROMPT = "You are a careful study assistant. Identify the subject and follow the language and instructions of the question: for English exercises, answer in natural English; for Vietnamese questions, answer in Vietnamese. Give the answer first, then a brief explanation appropriate to the subject. Do not assume every question is mathematics. For math only, use LaTeX for all expressions and geometry notation, with \\(...\\) inline and \\[...\\] for display equations. Never split words or labels into separate lines.";
+    const SYSTEM_PROMPT = `You are a helpful study assistant and conversational partner. First identify what the user wants. Solve a problem only when the user asks to solve/calculate/prove/answer an exercise, or the image clearly contains a school exercise. For concept questions (for example, “What is F?”), general questions, greetings, opinions, and ordinary conversation, respond naturally to that request; do not turn it into a fabricated exercise or force an answer-plus-solution format. If intent is ambiguous, answer the most likely conversational request and ask a brief clarifying question only when needed. When solving an exercise, give the result first and then the key reasoning at an appropriate level.
 
-    const PROMPT = "Answer the question below according to its subject and the language of its instructions. Give the answer first, then a brief explanation:";
+Identify the subject and follow the language and instructions of the question: answer English exercises in natural English and Vietnamese questions in Vietnamese.
+
+Mathematics and notation:
+- Use correct LaTeX for every mathematical expression and geometry symbol: \\(...\\) inline, \\[...\\] on a separate display line. Keep ordinary prose outside math delimiters.
+- Explain unfamiliar notation when it first matters. State what a function's input means, its domain, and which symbols are fixed parameters versus variables. For example, in F(n)=2T_n(t), n is the integer input/index, t is a fixed real parameter, T_n is the degree-n Chebyshev polynomial, and F is the function of n obtained by evaluating 2T_n at t.
+- Check domains, absolute values, indices, and conditions before manipulating formulas. Do not silently change a-b into |a-b| unless the stated definition or a justified property permits it; if extending Chebyshev indices to negative integers, explicitly use and justify T_{-n}=T_n.
+
+Diagrams and geometry:
+- When a diagram matters, give a compact, structured description of its labels, objects, incidences, and explicitly marked properties before relying on it. Name the figure correctly: three vertices make a triangle (for example, triangle ABC); four make a quadrilateral ABCD. Do not call ABCD a triangle.
+- Separate what the text/diagram explicitly states from what follows by a valid theorem. Never infer equal lengths, equal angles, parallelism, perpendicularity, cyclicity, or a special quadrilateral merely because the drawing looks that way. Equality needs matching marks, stated data, or a theorem whose hypotheses have been established.
+- Use precise notation such as \\angle ABC, \\overline{AB}, AB\\perp CD, and AB\\parallel CD. If a label, incidence, or mark is unclear, say it is unclear and do not guess.
+
+Presentation:
+- Use a Markdown table for aligned data, comparing several cases, or showing a multi-step value table; keep a short answer in prose when a table would add clutter.
+- Use headings and numbered steps for multi-part reasoning, and concise bullets for lists. Preserve the question's symbols and units. Never split labels or words into one character per line.`;
+
+    const PROMPT = "Respond to the user's actual intent in their language. Solve only when they ask for an exercise to be solved; answer concept questions and ordinary chat naturally. Define unfamiliar symbols/functions when relevant. For diagrams, use only supported labels and properties; never infer equality from appearance. Use a Markdown table when it clarifies comparisons or data.";
 
     const wait = ms => new Promise(r => setTimeout(r, ms));
 
@@ -137,7 +153,15 @@
         try {
             const saved = JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY) || '[]');
             if (!Array.isArray(saved)) return [];
-            return saved.filter(m => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-CHAT_HISTORY_MAX);
+            return saved.filter(m => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string')
+                .slice(-CHAT_HISTORY_MAX)
+                .map(m => ({
+                    role: m.role,
+                    content: m.role === 'user' && /^Read the question in the image carefully[\s\S]*\[(?:screenshot|pasted image|full Violympic question)\]$/i.test(m.content)
+                        ? 'Ảnh câu hỏi đã gửi.' : m.content,
+                    ...(typeof m.image === 'string' && /^data:image\/jpeg;base64,/i.test(m.image) ? { image: m.image } : {}),
+                    ...(typeof m.caption === 'string' ? { caption: m.caption.slice(0, 4000) } : {}),
+                }));
         } catch (_) { return []; }
     }
     function saveChatHistory(items) {
@@ -693,6 +717,8 @@
               .infoSection p,.infoSection ul,.infoSection ol { margin:6px 0; }
               #messages {flex:1;min-height:0;overflow:auto;padding:12px;background:#f7f7f8}
               .msg { padding:10px 12px;margin:8px 0;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-width:96%; }
+              .msg-image { display:block;width:auto;max-width:min(100%,360px);max-height:320px;object-fit:contain;border-radius:8px;background:#ffffff24; }
+              .msg-caption { margin-top:7px;white-space:pre-wrap;overflow-wrap:anywhere; }
               .user {margin-left:auto;background:#10a37f;color:#fff}
               .bot {background:#fff;border:1px solid #e5e5e5}
               .msg .katex-display { margin: 8px 0; }
@@ -813,8 +839,11 @@
                   </nav>
                   <div id="infoBody">
                     <section class="infoSection active" id="info-updates">
-                      <h3>Bản hiện tại 10.4.0</h3>
+                      <h3>Bản hiện tại 10.5.2</h3>
                       <ul>
+                        <li>Chỉ giải khi người dùng yêu cầu giải bài; câu hỏi khái niệm và trò chuyện thường được trả lời tự nhiên.</li>
+                        <li>Ảnh chụp, ảnh dán và ảnh đề gửi cho AI hiện hiển thị trực tiếp trong khung chat; không còn hiện prompt kỹ thuật hoặc nhãn nguồn ảnh.</li>
+                        <li>Cải thiện giải thích ký hiệu/hàm số; mô tả hình học có căn cứ, không đoán tính chất từ hình vẽ; trình bày bảng khi phù hợp.</li>
                         <li>Mỗi mã chỉ đăng nhập trên một cài đặt tại một thời điểm; đăng nhập ở thiết bị khác sẽ thu hồi phiên cũ. Phiên được chia sẻ giữa các website trong cùng hồ sơ Tampermonkey.</li>
                         <li>Nhận diện hộp thoại câu hỏi Violympic và gửi trọn câu hỏi cùng đáp án ảnh qua Vision từ nút “Lấy cả trang”.</li>
                         <li>Cải thiện chụp GameCanvas trên IOE và nhận diện một số bố cục câu hỏi VioEdu.</li>
@@ -1021,6 +1050,7 @@
 
 
             let busy = false, history = loadChatHistory(), controller = null;
+            let pendingChatImagePreview = null;
             const setStatus = t => {
                 const el = $('status');
                 if (el) el.textContent = t;
@@ -1149,7 +1179,29 @@
                 return d;
             }
 
-            history.forEach(item => addMessage(item.role, item.content));
+            function addImageMessage(imageSrc, caption = '') {
+                const d = document.createElement('div');
+                d.className = 'msg user';
+                const image = document.createElement('img');
+                image.className = 'msg-image';
+                image.src = imageSrc;
+                image.alt = 'Ảnh câu hỏi đã gửi';
+                image.loading = 'lazy';
+                d.appendChild(image);
+                if (caption) {
+                    const text = document.createElement('div');
+                    text.className = 'msg-caption';
+                    text.textContent = caption;
+                    d.appendChild(text);
+                }
+                messages.appendChild(d);
+                messages.scrollTop = messages.scrollHeight;
+                return d;
+            }
+
+            history.forEach(item => item.image
+                ? addImageMessage(item.image, item.caption || '')
+                : addMessage(item.role, item.content));
 
             function setBusy(v) {
                 busy = v;
@@ -1413,6 +1465,21 @@
                 img.src = url;
             });
 
+            async function makeChatImageThumbnail(file) {
+                try {
+                    const img = await loadImageFromFile(file);
+                    const scale = Math.min(1, 360 / (img.naturalWidth || img.width), 280 / (img.naturalHeight || img.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+                    canvas.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    return canvas.toDataURL('image/jpeg', 0.5);
+                } catch (_) { return ''; }
+            }
+
             async function apiFetch(path, body) {
                 const headers = { 'Content-Type': 'application/json' };
                 const token = await getToken();
@@ -1434,13 +1501,16 @@
                     throw new Error('AUTH');
                 }
                 const data = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                if (!res.ok) {
+                    const retry = data.retryAfter ? ` Thử lại sau ${data.retryAfter} giây.` : '';
+                    throw new Error((data.error || `HTTP ${res.status}`) + retry);
+                }
                 if (data.text) return data.text;
                 throw new Error('Vision API returned no text');
             }
 
             // CHAT
-            async function callGroq(userContent, historyText, model, imageDataUrl = null) {
+            async function callGroq(userContent, historyText, model, imageDataUrl = null, historyImage = '', historyCaption = '') {
                 const useMultiAgent = multiAgentEl.checked && !imageDataUrl;
                 if (useMultiAgent && multiAgentUsageCount() >= MULTI_AGENT_DAILY_LIMIT) {
                     setStatus('Daily multi-agent limit reached (3 runs). Use a single model or try again tomorrow.');
@@ -1456,7 +1526,7 @@
 
                 const messagesForBackend = [
                     { role: 'system', content: SYSTEM_PROMPT },
-                    ...history.slice(-CHAT_CONTEXT_MAX),
+                    ...history.slice(-CHAT_CONTEXT_MAX).map(({ role, content }) => ({ role, content })),
                     { role: 'user', content: typeof userContent === 'string' ? userContent : '' },
                 ];
 
@@ -1492,7 +1562,12 @@
 
                     if (!response.ok) {
                         const errText = await response.text();
-                        throw new Error(`Backend HTTP ${response.status}: ${errText.slice(0, 300)}`);
+                        let detail = errText.slice(0, 300);
+                        try {
+                            const payload = JSON.parse(errText);
+                            detail = (payload.error || detail) + (payload.retryAfter ? ` Thử lại sau ${payload.retryAfter} giây.` : '');
+                        } catch (_) {}
+                        throw new Error(detail || `Backend HTTP ${response.status}`);
                     }
 
                     const reader = response.body.getReader();
@@ -1541,7 +1616,7 @@
                     renderAssistantMessage(answer, fullText);
 
                     history.push(
-                        { role: 'user', content: historyText },
+                        { role: 'user', content: historyText, ...(historyImage ? { image: historyImage, caption: historyCaption } : {}) },
                         { role: 'assistant', content: fullText }
                     );
                     if (history.length > CHAT_HISTORY_MAX) history = history.slice(-CHAT_HISTORY_MAX);
@@ -1552,7 +1627,7 @@
                         renderAssistantMessage(answer, (fullText || '') + '\n\nStopped.');
                         if (fullText) {
                             history.push(
-                                { role: 'user', content: historyText },
+                                { role: 'user', content: historyText, ...(historyImage ? { image: historyImage, caption: historyCaption } : {}) },
                                 { role: 'assistant', content: fullText }
                             );
                             if (history.length > CHAT_HISTORY_MAX) history = history.slice(-CHAT_HISTORY_MAX);
@@ -1584,9 +1659,11 @@
             }
 
             async function transcribeImageToInput(file) {
+                pendingChatImagePreview = null;
                 showPreview(file);
                 try {
                     const text = await transcribeImageWithVision(file);
+                    pendingChatImagePreview = await makeChatImageThumbnail(file);
                     clearPreview();
                     setBusy(false);
                     appendToQuestion(text);
@@ -1599,7 +1676,8 @@
                 }
             }
 
-            async function handleImageWithVision(file, label) {
+            async function handleImageWithVision(file) {
+                pendingChatImagePreview = null;
                 if (imageModeSel.value !== 'solve') {
                     await transcribeImageToInput(file);
                     return;
@@ -1608,10 +1686,15 @@
                 setStatus('Sending image to ' + visionSel.value + ' for solving...');
                 try {
                     const dataUrl = await fileToDataURL(file);
+                    const thumbnail = await makeChatImageThumbnail(file);
                     clearPreview();
-                    const prompt = "Read the question in the image carefully and answer the actual task, whatever its subject; do not assume it is a math problem. For English exercises, answer in natural English; otherwise follow the language of the question. Give the answer first, then a brief explanation. If it is mathematics, use LaTeX for formulas and geometry notation. Read labels carefully, and say when a diagram mark is unclear instead of guessing.";
-                    addMessage('user', prompt + ' [' + label + ']');
-                    await callGroq(prompt, prompt, visionSel.value, dataUrl);
+                    const caption = question.value.trim();
+                    const prompt = caption || 'Inspect the attached image and infer the user’s intent. If it clearly shows a school exercise, solve it. If it is a general image or conversational question, respond naturally to what the user is asking. If the intent is unclear, briefly describe what is visible and ask what the user wants to know. Never guess unclear diagram information.';
+                    const historyText = caption || 'Người dùng gửi kèm một ảnh câu hỏi.';
+                    addImageMessage(dataUrl, caption);
+                    question.value = '';
+                    pendingChatImagePreview = null;
+                    await callGroq(prompt, historyText, visionSel.value, dataUrl, thumbnail, caption);
                 } catch (err) {
                     clearPreview();
                     if (err.message === 'AUTH') return;
@@ -1650,7 +1733,7 @@
                     return;
                 }
 
-                await handleImageWithVision(file, 'screenshot');
+                await handleImageWithVision(file);
             }
 
             const capBtnEl = $('capBtn');
@@ -1738,7 +1821,7 @@
                             setStatus('Capturing the full question dialog...');
                             try {
                                 const file = await captureQuestionDialog(dialog);
-                                await handleImageWithVision(file, 'full Violympic question');
+                                await handleImageWithVision(file);
                             } catch (err) {
                                 setStatus('Could not capture the dialog; switching to manual region selection.');
                                 setBusy(false);
@@ -1820,7 +1903,7 @@
                     return;
                 }
 
-                await handleImageWithVision(file, 'pasted image');
+                await handleImageWithVision(file);
             }
 
             document.addEventListener('paste', e => {
@@ -1849,9 +1932,12 @@
                 const raw = question.value.trim();
                 if (!raw) return;
                 clearPreview();
-                addMessage('user', raw);
+                const attachedImage = pendingChatImagePreview;
+                if (attachedImage) addImageMessage(attachedImage, raw);
+                else addMessage('user', raw);
+                pendingChatImagePreview = null;
                 question.value = '';
-                callGroq(raw, raw, modelSel.value);
+                callGroq(raw, raw, modelSel.value, null, attachedImage || '', attachedImage ? raw : '');
             }
             const sendBtnEl = $('sendBtn');
             if (sendBtnEl) sendBtnEl.onclick = sendText;
@@ -1864,6 +1950,7 @@
                 if (busy) return;
                 hideScrapeActions();
                 history = [];
+                pendingChatImagePreview = null;
                 saveChatHistory(history);
                 messages.replaceChildren();
                 clearPreview();
