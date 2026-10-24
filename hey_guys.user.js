@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         IOE / VioEdu / Violympic AI Assistant V10.1 - Auth + Scraper + Vision
+// @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      10.2.3
+// @version      10.2.7
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -513,7 +513,7 @@
                 bar.style.cssText = 'position:fixed;left:0;top:0;right:0;z-index:2147483647;background:#c00;color:#fff;font:13px/1.4 Arial;padding:8px 12px;white-space:pre-wrap;';
                 (document.body || document.documentElement).appendChild(bar);
             }
-            bar.textContent = 'IOE AI lỗi: ' + msg;
+            bar.textContent = 'Trợ lý học tập lỗi: ' + msg;
         } catch (_) {}
         console.error('[IOE AI V10.1]', msg);
     }
@@ -591,6 +591,8 @@
               }
               #lockTitle { font-weight:700;font-size:18px;margin-bottom:6px;color:#111; }
               #lockSub { font-size:13px;color:#666;margin-bottom:16px;line-height:1.5; }
+              #codeHelp { margin-top:12px;text-align:center;font-size:13px;color:#666; }
+              #codeHelp a { color:#087f67;font-weight:600;text-decoration:underline; }
               #codeInput {
                 width:100%;padding:12px 14px;border:2px solid #ddd;border-radius:10px;
                 outline:none;font:14px Arial;margin-bottom:12px;
@@ -623,6 +625,21 @@
               #advancedControls .row { margin-top:3px; }
               #logoutBtn { font-size:16px !important; opacity:0.85; }
               #logoutBtn:hover { opacity:1; }
+              #infoBtn { font-size:18px !important; }
+              #infoModal { display:none;position:fixed;inset:0;z-index:2147483647;background:#0008;align-items:center;justify-content:center;padding:14px;pointer-events:auto;font:14px/1.55 Arial,sans-serif; }
+              #infoModal.visible { display:flex; }
+              #infoBox { width:620px;max-width:100%;max-height:86vh;display:flex;flex-direction:column;background:#fff;color:#222;border-radius:14px;box-shadow:0 18px 60px #0005;overflow:hidden; }
+              #infoHeader { display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#10a37f;color:#fff; }
+              #infoHeader strong { font-size:16px; }
+              #closeInfoBtn { border:0;background:transparent;color:#fff;font-size:22px;cursor:pointer; }
+              #infoTabs { display:flex;gap:6px;padding:8px 12px 0;border-bottom:1px solid #e5e7eb; }
+              .infoTab { border:0;border-bottom:2px solid transparent;background:transparent;padding:8px 10px;color:#555;cursor:pointer;font:600 13px Arial; }
+              .infoTab.active { color:#087f67;border-color:#10a37f; }
+              #infoBody { overflow:auto;padding:10px 18px 18px; }
+              .infoSection { display:none; }
+              .infoSection.active { display:block; }
+              .infoSection h3 { margin:10px 0 5px;font-size:15px; }
+              .infoSection p,.infoSection ul,.infoSection ol { margin:6px 0; }
               #messages {flex:1;min-height:0;overflow:auto;padding:12px;background:#f7f7f8}
               .msg { padding:10px 12px;margin:8px 0;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-width:96%; }
               .user {margin-left:auto;background:#10a37f;color:#fff}
@@ -664,21 +681,23 @@
 
             <div id="lockView">
               <div id="lockBox">
-                <div id="lockTitle">🔒 Trợ lý AI IOE</div>
+                <div id="lockTitle">🔒 Trợ lý học tập</div>
                 <div id="lockSub">Vui lòng nhập mã khóa để sử dụng. Phiên đăng nhập được lưu 30 ngày.</div>
                 <input type="password" id="codeInput" name="ioe_ai_access_code" placeholder="Nhập mã khóa..." autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" spellcheck="false">
                 <button id="unlockBtn">Xác nhận</button>
+                <div id="codeHelp">Bạn chưa có mã? <a href="https://www.facebook.com/tranxuantung123/" target="_blank" rel="noopener noreferrer">Ấn vào đây</a></div>
                 <div id="lockMsg"></div>
               </div>
             </div>
 
             <div id="appView">
-              <button id="launcher" title="Mở IOE AI (Alt+A)">🤖</button>
+              <button id="launcher" title="Mở Trợ lý học tập (Alt+A)">🤖</button>
               <section id="panel" class="hidden">
                 <div id="head">
-                  <b>🤖 Trợ lý AI IOE · V10</b>
+                  <b>🤖 Trợ lý học tập</b>
                   <div>
                     <button id="logoutBtn" title="Đăng xuất">🔓</button>
+                    <button id="infoBtn" title="Cập nhật, hướng dẫn sử dụng và điều khoản" aria-label="Thông tin">ⓘ</button>
                     <button id="closeBtn" title="Đóng">×</button>
                   </div>
                 </div>
@@ -733,6 +752,52 @@
                   </div>
                 </div>
               </section>
+              <div id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+                <section id="infoBox">
+                  <div id="infoHeader"><strong id="infoTitle">Trợ lý học tập · Thông tin</strong><button id="closeInfoBtn" aria-label="Đóng">×</button></div>
+                  <nav id="infoTabs" aria-label="Thông tin trợ lý">
+                    <button class="infoTab active" data-info-tab="updates">Cập nhật</button>
+                    <button class="infoTab" data-info-tab="guide">Hướng dẫn</button>
+                    <button class="infoTab" data-info-tab="terms">Điều khoản</button>
+                  </nav>
+                  <div id="infoBody">
+                    <section class="infoSection active" id="info-updates">
+                      <h3>Bản hiện tại 10.2.7</h3>
+                      <ul>
+                        <li>Nhận diện hộp thoại câu hỏi Violympic và gửi trọn câu hỏi cùng đáp án ảnh qua Vision từ nút “Lấy cả trang”.</li>
+                        <li>Cải thiện chụp GameCanvas trên IOE và nhận diện một số bố cục câu hỏi VioEdu.</li>
+                        <li>Sửa hiển thị LaTeX và điều chỉnh AI theo ngôn ngữ, môn học của đề.</li>
+                      </ul>
+                    </section>
+                    <section class="infoSection" id="info-guide">
+                      <h3>Bắt đầu</h3>
+                      <ol>
+                        <li>Nhập mã truy cập được cấp để mở trợ lý. Phiên đăng nhập được lưu trên trình duyệt tối đa 30 ngày.</li>
+                        <li>Chọn model trong danh sách. Qwen là lựa chọn mặc định; có thể đổi model bất cứ lúc nào.</li>
+                        <li>Nhập câu hỏi vào khung chat rồi bấm “Gửi”, hoặc nhấn Enter. Lịch sử gần đây được lưu trên thiết bị.</li>
+                      </ol>
+                      <h3>Lấy câu hỏi và dùng Vision</h3>
+                      <ul>
+                        <li>“Lấy cả trang”: tự lấy câu hỏi từ bố cục được hỗ trợ; nếu đang mở hộp thoại câu hỏi Violympic, trợ lý chụp toàn hộp thoại gồm cả đáp án dạng ảnh.</li>
+                        <li>“Chụp & Hỏi AI”: chụp trang, kéo chọn vùng cần đọc rồi gửi ảnh cho Vision.</li>
+                        <li>Ở chế độ ảnh “Giải”, Vision trả lời câu hỏi trong ảnh. Ở chế độ “Chép đề”, Vision chuyển nội dung nhận diện được vào khung chat để bạn xem và sửa.</li>
+                        <li>Nếu nội dung trang không được nhận diện, dùng “Chụp & Hỏi AI” hoặc dán ảnh vào khung chat.</li>
+                      </ul>
+                      <h3>Multi-agent</h3>
+                      <p>Bật Multi-agent để model tạo đáp án rồi nhận phản biện và lượt sửa có giới hạn. Tối đa 3 lần cộng tác mỗi ngày trên trình duyệt; số lượt sửa chọn ở danh sách bên cạnh.</p>
+                    </section>
+                    <section class="infoSection" id="info-terms">
+                      <h3>Điều khoản sử dụng</h3>
+                      <ol>
+                        <li>Công cụ dành cho tự học, ôn tập và tham khảo; không sử dụng trong bài thi hoặc hoạt động bị cấm công cụ hỗ trợ.</li>
+                        <li>AI có thể đọc sai đề hoặc trả lời sai. Người dùng cần tự kiểm tra lời giải và đáp án.</li>
+                        <li>Không chia sẻ mã truy cập. Câu hỏi và ảnh gửi lên sẽ được xử lý qua server của dịch vụ và nhà cung cấp AI.</li>
+                        <li>Dịch vụ, model và tính năng có thể thay đổi hoặc tạm ngừng; không cam kết hoạt động liên tục hay kết quả luôn chính xác.</li>
+                      </ol>
+                    </section>
+                  </div>
+                </section>
+              </div>
             </div>`;
 
             console.log('[IOE AI V10.1] UI đã render');
@@ -1003,8 +1068,19 @@
                 return out.join('');
             }
 
+            function normalizeMathOutput(text) {
+                return String(text)
+                    // Some model responses escape display delimiters twice.
+                    .replace(/\\\\\[/g, '\\[').replace(/\\\\\]/g, '\\]')
+                    .replace(/\\\\\(/g, '\\(').replace(/\\\\\)/g, '\\)')
+                    // Remove a stray escaped newline immediately after a display opener.
+                    .replace(/\\\[\\(?=\r?\n)/g, '\\[')
+                    // Convert common HTML-encoded whitespace emitted as plain text.
+                    .replace(/&#x0*20;|&#0*32;|&nbsp;/gi, ' ');
+            }
+
             function renderAssistantMessage(element, text) {
-                element.innerHTML = renderMarkdown(text);
+                element.innerHTML = renderMarkdown(normalizeMathOutput(text));
                 renderMath(element);
             }
 
@@ -1048,8 +1124,24 @@
             const launcherEl = $('launcher');
             const closeBtnEl = $('closeBtn');
             const logoutBtnEl = $('logoutBtn');
+            const infoBtnEl = $('infoBtn'), infoModalEl = $('infoModal'), closeInfoBtnEl = $('closeInfoBtn');
             if (launcherEl) launcherEl.onclick = openPanel;
             if (closeBtnEl) closeBtnEl.onclick = closePanel;
+            const closeInfo = () => infoModalEl && infoModalEl.classList.remove('visible');
+            if (infoBtnEl) infoBtnEl.onclick = () => infoModalEl && infoModalEl.classList.add('visible');
+            if (closeInfoBtnEl) closeInfoBtnEl.onclick = closeInfo;
+            if (infoModalEl) {
+                infoModalEl.addEventListener('click', e => { if (e.target === infoModalEl) closeInfo(); });
+                infoModalEl.querySelectorAll('.infoTab').forEach(tab => {
+                    tab.addEventListener('click', () => {
+                        infoModalEl.querySelectorAll('.infoTab').forEach(item => item.classList.toggle('active', item === tab));
+                        infoModalEl.querySelectorAll('.infoSection').forEach(section => {
+                            section.classList.toggle('active', section.id === 'info-' + tab.dataset.infoTab);
+                        });
+                    });
+                });
+            }
+            window.addEventListener('keydown', e => { if (e.key === 'Escape') closeInfo(); });
             const savePanelSize = () => {
                 localStorage.setItem('ioeai_panel_size', JSON.stringify({ width: panel.style.width, height: panel.style.height }));
             };
@@ -1476,64 +1568,34 @@
             async function captureAndAsk() {
                 if (busy || authState !== 'unlocked') return;
                 setBusy(true);
-                setStatus('Đang chụp...');
+                setStatus('Capturing screen...');
 
                 let file;
-                let label = 'screenshot';
                 try {
-                    const questionDialog = Array.from(document.querySelectorAll('.MuiDialogContent-root')).find(el => {
-                        const rect = el.getBoundingClientRect();
-                        return rect.width > 0 && rect.height > 0 &&
-                            el.querySelector('.tiptapRender.questionRender') &&
-                            el.querySelectorAll('button').length >= 2;
-                    });
+                    const shot = await takeShot();
+                    setStatus('Select the area to capture...');
+                    const r = await selectRegionResizable(shot);
+                    if (!r) { setStatus('Cancelled.'); setBusy(false); return; }
 
-                    if (questionDialog && typeof html2canvas === 'function') {
-                        try {
-                            setStatus('Đang chụp toàn bộ câu hỏi Violympic...');
-                            root.style.visibility = 'hidden';
-                            await wait(80);
-                            const dialogShot = await html2canvas(questionDialog, {
-                                useCORS: true, allowTaint: false, logging: false,
-                                backgroundColor: '#ffffff',
-                                scale: Math.min(window.devicePixelRatio || 1, 2),
-                                imageTimeout: 5000,
-                            });
-                            file = await canvasToFile(dialogShot);
-                            label = 'Violympic question dialog';
-                        } catch (dialogError) {
-                            console.warn('[IOE AI] Dialog capture failed; falling back to manual region capture:', dialogError);
-                        } finally {
-                            root.style.visibility = 'visible';
-                        }
-                    }
-
-                    if (!file) {
-                        const shot = await takeShot();
-                        setStatus('Kéo chuột chọn vùng...');
-                        const r = await selectRegionResizable(shot);
-                        if (!r) { setStatus('Đã hủy bỏ.'); setBusy(false); return; }
-
-                        const rx = shot.width / innerWidth;
-                        const ry = shot.height / innerHeight;
-                        const out = document.createElement('canvas');
-                        out.width = Math.round(r.w * rx);
-                        out.height = Math.round(r.h * ry);
-                        const g = out.getContext('2d');
-                        g.fillStyle = '#fff'; g.fillRect(0, 0, out.width, out.height);
-                        g.drawImage(shot,
-                            Math.round(r.x * rx), Math.round(r.y * ry),
-                            out.width, out.height,
-                            0, 0, out.width, out.height);
-                        file = await canvasToFile(out);
-                    }
+                    const rx = shot.width / innerWidth;
+                    const ry = shot.height / innerHeight;
+                    const out = document.createElement('canvas');
+                    out.width = Math.round(r.w * rx);
+                    out.height = Math.round(r.h * ry);
+                    const g = out.getContext('2d');
+                    g.fillStyle = '#fff'; g.fillRect(0, 0, out.width, out.height);
+                    g.drawImage(shot,
+                        Math.round(r.x * rx), Math.round(r.y * ry),
+                        out.width, out.height,
+                        0, 0, out.width, out.height);
+                    file = await canvasToFile(out);
                 } catch (err) {
-                    setStatus('Lỗi chụp: ' + (err.message || err));
+                    setStatus('Capture failed: ' + (err.message || err));
                     setBusy(false);
                     return;
                 }
 
-                await handleImageWithVision(file, label);
+                await handleImageWithVision(file, 'screenshot');
             }
 
             const capBtnEl = $('capBtn');
@@ -1585,10 +1647,52 @@
                 if (bar) bar.style.display = 'none';
             }
 
+            function findVisibleQuestionDialog() {
+                return Array.from(document.querySelectorAll('.MuiDialogContent-root')).find(el => {
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0 &&
+                        el.querySelector('.tiptapRender.questionRender') &&
+                        el.querySelectorAll('button').length >= 2;
+                }) || null;
+            }
+
+            async function captureQuestionDialog(dialog) {
+                if (typeof html2canvas !== 'function') throw new Error('html2canvas is unavailable');
+                root.style.visibility = 'hidden';
+                try {
+                    await wait(80);
+                    const shot = await html2canvas(dialog, {
+                        useCORS: true, allowTaint: false, logging: false,
+                        backgroundColor: '#ffffff',
+                        scale: Math.min(window.devicePixelRatio || 1, 2),
+                        imageTimeout: 5000,
+                    });
+                    return await canvasToFile(shot);
+                } finally {
+                    root.style.visibility = 'visible';
+                }
+            }
+
             async function doScrape(mode) {
                 if (busy || authState !== 'unlocked') return;
                 setBusy(true);
                 try {
+                    if (mode === 'all') {
+                        const dialog = findVisibleQuestionDialog();
+                        if (dialog) {
+                            setStatus('Capturing the full question dialog...');
+                            try {
+                                const file = await captureQuestionDialog(dialog);
+                                await handleImageWithVision(file, 'full Violympic question');
+                            } catch (err) {
+                                setStatus('Could not capture the dialog; switching to manual region selection.');
+                                setBusy(false);
+                                await captureAndAsk();
+                            }
+                            return;
+                        }
+                    }
+
                     let region = null;
                     if (mode === 'region') {
                         setStatus('Kéo chuột chọn vùng chứa câu hỏi...');
