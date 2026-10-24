@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         IOE / VioEdu / Violympic AI Assistant V10.1 - Auth + Scraper + Vision
 // @namespace    https://ioe.vn/
-// @version      10.2.1
+// @version      10.2.3
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -47,9 +47,9 @@
         ['qwen/qwen3.8-27b', 'Qwen 3.8 27B Vision'],
     ];
 
-    const SYSTEM_PROMPT = "B\u1ea1n l\u00e0 tr\u1ee3 l\u00fd h\u1ecdc t\u1eadp. M\u1eb7c \u0111\u1ecbnh tr\u1ea3 l\u1eddi b\u1eb1ng ti\u1ebfng Vi\u1ec7t, r\u00f5 r\u00e0ng, g\u1ecdn g\u00e0ng; n\u00eau \u0111\u00e1p \u00e1n tr\u01b0\u1edbc r\u1ed3i gi\u1ea3i th\u00edch ng\u1eafn. Kh\u00f4ng t\u00e1ch t\u1eebng ch\u1eef ho\u1eb7c k\u00fd t\u1ef1 th\u00e0nh d\u00f2ng ri\u00eang. Khi vi\u1ebft to\u00e1n, d\u00f9ng LaTeX: c\u00f4ng th\u1ee9c trong d\u00f2ng d\u00f9ng \\(...\\) v\u00e0 c\u00f4ng th\u1ee9c ri\u00eang d\u00f2ng d\u00f9ng \\[...\\].";
+    const SYSTEM_PROMPT = "You are a careful study assistant. Identify the subject and follow the language and instructions of the question: for English exercises, answer in natural English; for Vietnamese questions, answer in Vietnamese. Give the answer first, then a brief explanation appropriate to the subject. Do not assume every question is mathematics. For math only, use LaTeX for all expressions and geometry notation, with \\(...\\) inline and \\[...\\] for display equations. Never split words or labels into separate lines.";
 
-    const PROMPT = "H\u00e3y ch\u1ecdn c\u00e2u tr\u1ea3 l\u1eddi \u0111\u00fang cho c\u00e2u h\u1ecfi sau. N\u00eau \u0111\u00e1p \u00e1n tr\u01b0\u1edbc, sau \u0111\u00f3 gi\u1ea3i th\u00edch ng\u1eafn g\u1ecdn b\u1eb1ng ti\u1ebfng Vi\u1ec7t:";
+    const PROMPT = "Answer the question below according to its subject and the language of its instructions. Give the answer first, then a brief explanation:";
 
     const wait = ms => new Promise(r => setTimeout(r, ms));
 
@@ -1462,7 +1462,7 @@
                 try {
                     const dataUrl = await fileToDataURL(file);
                     clearPreview();
-                    const prompt = "Gi\u1ea3i b\u00e0i to\u00e1n trong \u1ea3nh. H\u00e3y \u0111\u1ecdc ch\u00ednh x\u00e1c n\u1ed9i dung, nh\u00e3n \u0111i\u1ec3m v\u00e0 k\u00fd hi\u1ec7u h\u00ecnh h\u1ecdc. Vi\u1ebft bi\u1ec3u th\u1ee9c v\u00e0 quan h\u1ec7 h\u00ecnh h\u1ecdc b\u1eb1ng LaTeX, v\u00ed d\u1ee5 $\\angle ABC$, $AB \\perp CD$, $90^\\circ$. N\u1ebfu d\u1ea5u g\u00f3c vu\u00f4ng ho\u1eb7c ph\u00e2n gi\u00e1c kh\u00f4ng r\u00f5, h\u00e3y n\u00f3i ch\u01b0a r\u00f5, kh\u00f4ng t\u1ef1 suy di\u1ec5n. Tr\u1ea3 l\u1eddi ng\u1eafn g\u1ecdn b\u1eb1ng ti\u1ebfng Vi\u1ec7t.";
+                    const prompt = "Read the question in the image carefully and answer the actual task, whatever its subject; do not assume it is a math problem. For English exercises, answer in natural English; otherwise follow the language of the question. Give the answer first, then a brief explanation. If it is mathematics, use LaTeX for formulas and geometry notation. Read labels carefully, and say when a diagram mark is unclear instead of guessing.";
                     addMessage('user', prompt + ' [' + label + ']');
                     await callGroq(prompt, prompt, visionSel.value, dataUrl);
                 } catch (err) {
@@ -1479,31 +1479,61 @@
                 setStatus('Đang chụp...');
 
                 let file;
+                let label = 'screenshot';
                 try {
-                    const shot = await takeShot();
-                    setStatus('Kéo chuột chọn vùng...');
-                    const r = await selectRegionResizable(shot);
-                    if (!r) { setStatus('Đã hủy bỏ.'); setBusy(false); return; }
+                    const questionDialog = Array.from(document.querySelectorAll('.MuiDialogContent-root')).find(el => {
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0 &&
+                            el.querySelector('.tiptapRender.questionRender') &&
+                            el.querySelectorAll('button').length >= 2;
+                    });
 
-                    const rx = shot.width / innerWidth;
-                    const ry = shot.height / innerHeight;
-                    const out = document.createElement('canvas');
-                    out.width = Math.round(r.w * rx);
-                    out.height = Math.round(r.h * ry);
-                    const g = out.getContext('2d');
-                    g.fillStyle = '#fff'; g.fillRect(0, 0, out.width, out.height);
-                    g.drawImage(shot,
-                        Math.round(r.x * rx), Math.round(r.y * ry),
-                        out.width, out.height,
-                        0, 0, out.width, out.height);
-                    file = await canvasToFile(out);
+                    if (questionDialog && typeof html2canvas === 'function') {
+                        try {
+                            setStatus('Đang chụp toàn bộ câu hỏi Violympic...');
+                            root.style.visibility = 'hidden';
+                            await wait(80);
+                            const dialogShot = await html2canvas(questionDialog, {
+                                useCORS: true, allowTaint: false, logging: false,
+                                backgroundColor: '#ffffff',
+                                scale: Math.min(window.devicePixelRatio || 1, 2),
+                                imageTimeout: 5000,
+                            });
+                            file = await canvasToFile(dialogShot);
+                            label = 'Violympic question dialog';
+                        } catch (dialogError) {
+                            console.warn('[IOE AI] Dialog capture failed; falling back to manual region capture:', dialogError);
+                        } finally {
+                            root.style.visibility = 'visible';
+                        }
+                    }
+
+                    if (!file) {
+                        const shot = await takeShot();
+                        setStatus('Kéo chuột chọn vùng...');
+                        const r = await selectRegionResizable(shot);
+                        if (!r) { setStatus('Đã hủy bỏ.'); setBusy(false); return; }
+
+                        const rx = shot.width / innerWidth;
+                        const ry = shot.height / innerHeight;
+                        const out = document.createElement('canvas');
+                        out.width = Math.round(r.w * rx);
+                        out.height = Math.round(r.h * ry);
+                        const g = out.getContext('2d');
+                        g.fillStyle = '#fff'; g.fillRect(0, 0, out.width, out.height);
+                        g.drawImage(shot,
+                            Math.round(r.x * rx), Math.round(r.y * ry),
+                            out.width, out.height,
+                            0, 0, out.width, out.height);
+                        file = await canvasToFile(out);
+                    }
                 } catch (err) {
                     setStatus('Lỗi chụp: ' + (err.message || err));
                     setBusy(false);
                     return;
                 }
 
-                await handleImageWithVision(file, 'screenshot');
+                await handleImageWithVision(file, label);
             }
 
             const capBtnEl = $('capBtn');
