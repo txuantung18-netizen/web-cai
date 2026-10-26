@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      10.4.0
+// @version      11.0.0
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -55,11 +55,10 @@
             }
             if (!valid(id)) id = makeDeviceId();
             try {
-                if (typeof GM_setValue === 'function') await GM_setValue(DEVICE_ID_KEY, id);
-                else localStorage.setItem(DEVICE_ID_KEY, id);
-            } catch (_) {
-                try { localStorage.setItem(DEVICE_ID_KEY, id); } catch (_) {}
-            }
+                if (typeof GM_setValue !== 'function') throw new Error('Cần cài bằng Tampermonkey để lưu phiên an toàn.');
+                await GM_setValue(DEVICE_ID_KEY, id);
+                try { localStorage.removeItem(DEVICE_ID_KEY); } catch (_) {}
+            } catch (error) { throw new Error('Không thể lưu thiết bị an toàn. Kiểm tra Tampermonkey.'); }
             return id;
         })();
         return deviceIdPromise;
@@ -80,9 +79,25 @@
         ['qwen/qwen3.8-27b', 'Qwen 3.8 27B Vision'],
     ];
 
-    const SYSTEM_PROMPT = "You are a careful study assistant. Identify the subject and follow the language and instructions of the question: for English exercises, answer in natural English; for Vietnamese questions, answer in Vietnamese. Give the answer first, then a brief explanation appropriate to the subject. Do not assume every question is mathematics. For math only, use LaTeX for all expressions and geometry notation, with \\(...\\) inline and \\[...\\] for display equations. Never split words or labels into separate lines.";
+    const SYSTEM_PROMPT = `You are a helpful study assistant and conversational partner. First identify what the user wants. Solve a problem only when the user asks to solve/calculate/prove/answer an exercise, or the image clearly contains a school exercise. For concept questions (for example, “What is F?”), general questions, greetings, opinions, and ordinary conversation, respond naturally to that request; do not turn it into a fabricated exercise or force an answer-plus-solution format. If intent is ambiguous, answer the most likely conversational request and ask a brief clarifying question only when needed. When solving an exercise, give the result first and then the key reasoning at an appropriate level.
 
-    const PROMPT = "Answer the question below according to its subject and the language of its instructions. Give the answer first, then a brief explanation:";
+Identify the subject and follow the language and instructions of the question: answer English exercises in natural English and Vietnamese questions in Vietnamese.
+
+Mathematics and notation:
+- Use correct LaTeX for every mathematical expression and geometry symbol: \\(...\\) inline, \\[...\\] on a separate display line. Keep ordinary prose outside math delimiters.
+- Explain unfamiliar notation when it first matters. State what a function's input means, its domain, and which symbols are fixed parameters versus variables. For example, in F(n)=2T_n(t), n is the integer input/index, t is a fixed real parameter, T_n is the degree-n Chebyshev polynomial, and F is the function of n obtained by evaluating 2T_n at t.
+- Check domains, absolute values, indices, and conditions before manipulating formulas. Do not silently change a-b into |a-b| unless the stated definition or a justified property permits it; if extending Chebyshev indices to negative integers, explicitly use and justify T_{-n}=T_n.
+
+Diagrams and geometry:
+- When a diagram matters, give a compact, structured description of its labels, objects, incidences, and explicitly marked properties before relying on it. Name the figure correctly: three vertices make a triangle (for example, triangle ABC); four make a quadrilateral ABCD. Do not call ABCD a triangle.
+- Separate what the text/diagram explicitly states from what follows by a valid theorem. Never infer equal lengths, equal angles, parallelism, perpendicularity, cyclicity, or a special quadrilateral merely because the drawing looks that way. Equality needs matching marks, stated data, or a theorem whose hypotheses have been established.
+- Use precise notation such as \\angle ABC, \\overline{AB}, AB\\perp CD, and AB\\parallel CD. If a label, incidence, or mark is unclear, say it is unclear and do not guess.
+
+Presentation:
+- Use a Markdown table for aligned data, comparing several cases, or showing a multi-step value table; keep a short answer in prose when a table would add clutter.
+- Use headings and numbered steps for multi-part reasoning, and concise bullets for lists. Preserve the question's symbols and units. Never split labels or words into one character per line.`;
+
+    const PROMPT = "Respond to the user's actual intent in their language. Solve only when they ask for an exercise to be solved; answer concept questions and ordinary chat naturally. Define unfamiliar symbols/functions when relevant. For diagrams, use only supported labels and properties; never infer equality from appearance. Use a Markdown table when it clarifies comparisons or data.";
 
     const wait = ms => new Promise(r => setTimeout(r, ms));
 
@@ -94,21 +109,24 @@
             if (typeof GM_getValue === 'function') {
                 const shared = await GM_getValue(TOKEN_KEY, null);
                 if (shared === SIGNED_OUT_MARKER) return '';
-                if (shared) return shared;
+                if (shared) { try { localStorage.removeItem(TOKEN_KEY); } catch (_) {} return shared; }
             }
         } catch (_) {}
         try {
             const local = localStorage.getItem(TOKEN_KEY) || '';
             // Migrate existing per-site sessions to Tampermonkey's shared script storage.
-            if (local && typeof GM_setValue === 'function') await GM_setValue(TOKEN_KEY, local);
-            return local;
+            if (local && typeof GM_setValue === 'function') {
+                await GM_setValue(TOKEN_KEY, local);
+                localStorage.removeItem(TOKEN_KEY);
+                return local;
+            }
+            return '';
         } catch (_) { return ''; }
     }
     async function setToken(t) {
-        try {
-            if (typeof GM_setValue === 'function') await GM_setValue(TOKEN_KEY, t);
-        } catch (_) {}
-        try { localStorage.setItem(TOKEN_KEY, t); } catch (_) {}
+        if (typeof GM_setValue !== 'function') throw new Error('Cần Tampermonkey để lưu phiên an toàn.');
+        await GM_setValue(TOKEN_KEY, t);
+        try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
     }
     async function clearToken() {
         try {
@@ -137,15 +155,20 @@
         try {
             const saved = JSON.parse(localStorage.getItem(CHAT_HISTORY_KEY) || '[]');
             if (!Array.isArray(saved)) return [];
-            return saved.filter(m => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-CHAT_HISTORY_MAX);
+            return saved.filter(m => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string')
+                .slice(-CHAT_HISTORY_MAX)
+                .map(m => ({
+                    role: m.role,
+                    content: m.role === 'user' && /^Read the question in the image carefully[\s\S]*\[(?:screenshot|pasted image|full Violympic question)\]$/i.test(m.content)
+                        ? 'Ảnh câu hỏi đã gửi.' : m.content,
+                    ...(typeof m.image === 'string' && /^data:image\/jpeg;base64,/i.test(m.image) ? { image: m.image } : {}),
+                    ...(typeof m.caption === 'string' ? { caption: m.caption.slice(0, 4000) } : {}),
+                }));
         } catch (_) { return []; }
     }
     function saveChatHistory(items) {
         try { localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(items.slice(-CHAT_HISTORY_MAX))); } catch (_) {}
     }
-    function multiAgentUsageKey() { return 'ioeai_multi_agent_uses_' + new Date().toISOString().slice(0, 10); }
-    function multiAgentUsageCount() { try { return Number(localStorage.getItem(multiAgentUsageKey())) || 0; } catch (_) { return 0; } }
-    function recordMultiAgentUse() { try { localStorage.setItem(multiAgentUsageKey(), String(multiAgentUsageCount() + 1)); } catch (_) {} }
 
     const KATEX_OPTS = {
         delimiters: [
@@ -693,6 +716,8 @@
               .infoSection p,.infoSection ul,.infoSection ol { margin:6px 0; }
               #messages {flex:1;min-height:0;overflow:auto;padding:12px;background:#f7f7f8}
               .msg { padding:10px 12px;margin:8px 0;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;max-width:96%; }
+              .msg-image { display:block;width:auto;max-width:min(100%,360px);max-height:320px;object-fit:contain;border-radius:8px;background:#ffffff24; }
+              .msg-caption { margin-top:7px;white-space:pre-wrap;overflow-wrap:anywhere; }
               .user {margin-left:auto;background:#10a37f;color:#fff}
               .bot {background:#fff;border:1px solid #e5e5e5}
               .msg .katex-display { margin: 8px 0; }
@@ -728,11 +753,42 @@
               #scrapeActions { display:none; gap:6px; margin-top:6px; padding:8px 10px;
                                 background:#f3f0ff; border:1px solid #d8ccff; border-radius:8px; align-items:center; }
               @media(max-width:450px){#panel{right:8px;bottom:72px;width:calc(100vw - 16px)}}
+              /* Taipei study room: warm paper, jade ink and a small vermilion seal. */
+              #panel,#lockBox,#infoBox{--paper:#f7f4ed;--surface:#fffdf8;--ink:#253e35;--muted:#747e72;--edge:#dedfd2;--jade:#315c4d;--soft:#e8eee4;--seal:#bf6248;font-family:Inter,"Segoe UI",system-ui,sans-serif}
+              #panel[data-theme="dark"]{--paper:#18251f;--surface:#203028;--ink:#e9eee1;--muted:#a5b29f;--edge:#3b4b3d;--jade:#9dc6a3;--soft:#2b3c30;--seal:#e49a79;color-scheme:dark}
+              #panel{width:470px;height:760px;border:1px solid var(--edge);border-radius:24px;background:var(--paper);color:var(--ink);box-shadow:0 24px 80px #1d352b30;font-size:14px}
+              #head{padding:19px 20px 15px;background:var(--surface);color:var(--ink);border-bottom:1px solid var(--edge);gap:8px}
+              .studio-brand{display:flex;align-items:center;gap:11px}.studio-seal{display:grid;place-items:center;width:36px;height:39px;border:1px solid var(--seal);border-radius:7px;color:var(--seal);font:700 22px Georgia,serif;transform:rotate(-4deg)}
+              .studio-brand b{display:block;font-size:16px;letter-spacing:-.4px}.studio-brand small{display:block;color:var(--muted);font-size:9px;letter-spacing:1.7px;margin-top:3px}
+              #head button{color:var(--ink);width:28px;height:30px;font-size:17px;border-radius:8px}#head button:hover{background:var(--soft)}
+              .studio-tools{padding:10px 16px;display:flex;gap:6px;border-bottom:1px solid var(--edge);align-items:center;background:var(--surface)}
+              .studio-tools button,.quick-prompts button,.copy-answer{border:1px solid var(--edge);background:var(--surface);color:var(--ink);border-radius:8px;padding:6px 9px;cursor:pointer;font:11px "Segoe UI",sans-serif}
+              .studio-tools button:hover,.quick-prompts button:hover,.copy-answer:hover{background:var(--soft);border-color:var(--jade)}
+              #accountUsage{margin-left:auto;color:var(--muted);font-size:10px;max-width:150px;text-align:right;line-height:1.45}
+              #historySearch{width:calc(100% - 32px);margin:10px 16px 0;border:1px solid var(--edge);border-radius:9px;background:var(--surface);color:var(--ink);padding:9px 11px;font:12px "Segoe UI",sans-serif;outline:none}
+              #messages{padding:14px 18px;background:var(--paper);scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:var(--edge) transparent}
+              .welcome{padding:20px 4px 12px}.welcome .eyebrow{font-size:10px;letter-spacing:2px;color:var(--seal)}.welcome h2{font:500 34px/1.12 Georgia,"Times New Roman",serif;letter-spacing:-1px;color:var(--ink);margin:12px 0}.welcome p{font-size:12px;line-height:1.8;color:var(--muted);max-width:300px}
+              .quick-prompts{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}.welcome-rule{height:1px;background:var(--edge);margin:20px 0 0}
+              .msg{max-width:98%;padding:13px 14px;border-radius:14px;margin:12px 0;line-height:1.7;font-size:13px;white-space:normal}
+              .user{background:var(--soft);color:var(--ink);border:1px solid var(--edge);border-bottom-right-radius:4px;margin-left:26px}
+              .bot{background:var(--surface);border:1px solid var(--edge);border-bottom-left-radius:4px;margin-right:8px}
+              .msg th,.msg td{border-color:var(--edge)}.msg th,.msg code,.msg blockquote{background:var(--soft);color:var(--ink)}.msg a{color:var(--seal)}.copy-answer{display:block;margin-top:10px;padding:3px 8px;color:var(--muted);font-size:10px}
+              #inputArea{padding:12px 15px 13px;background:var(--surface);border-top:1px solid var(--edge)}
+              #status{font-size:10px;color:var(--muted);min-height:17px;margin-bottom:5px}#advancedControls{background:var(--paper);border:1px solid var(--edge);padding:9px;border-radius:12px;margin:8px 0}#advancedControls[hidden]{display:none}
+              #panel .lbl,#panel .chk{color:var(--muted);font-size:11px}#panel select{background:var(--surface);color:var(--ink);border-color:var(--edge);font:11px "Segoe UI",sans-serif;padding:8px}
+              #panel textarea{background:var(--paper);color:var(--ink);border:1px solid var(--edge);border-radius:12px;min-height:74px;padding:12px;font:13px/1.6 "Segoe UI",sans-serif;resize:vertical;margin-top:4px}#panel textarea:focus,#historySearch:focus{border-color:var(--jade);box-shadow:0 0 0 3px #84a78c20}
+              #panel button.b{background:var(--soft);color:var(--ink);font:600 11px "Segoe UI",sans-serif;padding:10px 7px;border:1px solid var(--edge);border-radius:9px}#panel #sendBtn{background:#315c4d;color:#fff;border-color:#315c4d;flex:1.5}#panel #stopBtn{background:#bf6248;color:white}#panel #clearBtn{background:transparent;color:var(--muted)}
+              .composer-note{display:flex;justify-content:space-between;margin-top:7px;color:var(--muted);font-size:9px;letter-spacing:.15px}#launcher{background:#315c4d;border:1px solid #73917b;border-radius:18px;font:700 25px Georgia,serif;box-shadow:0 8px 30px #203c3540;width:54px;height:54px}
+              #lockView{background:#15282090;backdrop-filter:blur(7px)}#lockBox{width:380px;border-radius:22px;background:var(--paper);color:var(--ink);padding:30px;border-color:var(--edge)}#lockTitle{font:500 29px Georgia,serif;color:var(--ink)}#lockSub{color:var(--muted);margin-top:13px;font-family:"Segoe UI",sans-serif}#unlockBtn{background:#315c4d}#codeInput{background:var(--surface);border:1px solid var(--edge);font-family:"Segoe UI",sans-serif}
+              button:focus-visible{outline:2px solid var(--seal);outline-offset:3px}button:disabled{cursor:not-allowed}#messages .search-hidden{display:none!important}
+              @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+              @media(max-width:520px){#panel{right:8px;bottom:76px;width:calc(100vw - 16px);min-width:0;border-radius:18px;max-height:calc(100dvh - 90px)}#head{padding:14px}#messages{padding:10px 12px}.studio-tools{padding:8px 12px;flex-wrap:wrap}#accountUsage{max-width:135px}.welcome h2{font-size:30px}}
             </style>
 
             <div id="lockView">
               <div id="lockBox">
-                <div id="lockTitle">🔒 Trợ lý học tập</div>
+                <div class="studio-seal" aria-hidden="true">學</div>
+                <div id="lockTitle" style="margin-top:18px">Một góc để học.</div>
                 <div id="lockSub">Vui lòng nhập mã khóa để sử dụng. Phiên đăng nhập được lưu 30 ngày.</div>
                 <input type="password" id="codeInput" name="ioe_ai_access_code" placeholder="Nhập mã khóa..." autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" spellcheck="false">
                 <button id="unlockBtn">Xác nhận</button>
@@ -742,21 +798,30 @@
             </div>
 
             <div id="appView">
-              <button id="launcher" title="Mở Trợ lý học tập (Alt+A)">🤖</button>
-              <section id="panel" class="hidden">
+              <button id="launcher" title="Mở Trợ lý học tập (Alt+A)" aria-label="Mở trợ lý học tập">學</button>
+              <section id="panel" class="hidden" aria-label="Trợ lý học tập">
                 <div id="head">
-                  <b>🤖 Trợ lý học tập</b>
+                  <div class="studio-brand"><span class="studio-seal" aria-hidden="true">學</span><div><b>Góc học tập</b><small>TAIPEI INSPIRED · STUDY ROOM</small></div></div>
                   <div>
+                    <button id="themeBtn" title="Đổi giao diện sáng / tối" aria-label="Đổi giao diện">◐</button>
                     <button id="logoutBtn" title="Đăng xuất">🔓</button>
                     <button id="infoBtn" title="Cập nhật, hướng dẫn sử dụng và điều khoản" aria-label="Thông tin">ⓘ</button>
                     <button id="closeBtn" title="Đóng">×</button>
                   </div>
                 </div>
+                <div class="studio-tools">
+                  <button id="settingsBtn" aria-expanded="false" aria-controls="advancedControls">Tùy chỉnh</button>
+                  <button id="searchBtn" aria-label="Tìm trong cuộc trò chuyện" aria-expanded="false">Tìm</button>
+                  <button id="exportChatBtn" title="Tải cuộc trò chuyện dạng Markdown">Xuất .md</button>
+                  <span id="accountUsage" role="status">Hạn mức: chưa tải</span>
+                </div>
+                <input id="historySearch" type="search" placeholder="Tìm nội dung trong cuộc trò chuyện…" aria-label="Tìm trong cuộc trò chuyện" hidden>
                 <div id="messages"></div>
                 <div id="inputArea">
                   <img id="preview" alt="">
-                  <div id="status">Screenshot ? Groq Vision transcription ? question scraper ? Ctrl+V to paste an image.</div>
-                  <div id="advancedControls">
+                  <div id="status" role="status" aria-live="polite">Hỏi một câu. Mở thêm một cách hiểu.</div>
+                  <div class="row"><button class="b" id="quickCaptureBtn" title="Chụp vùng đề bài (Alt+S)">Chụp đề</button><button class="b" id="quickScrapeBtn">Lấy câu hỏi</button><button class="b" id="uploadImageBtn">Tải ảnh</button><input type="file" id="imageFileInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden></div>
+                  <div id="advancedControls" hidden>
                   <div class="row">
                     <span class="lbl">Model:</span>
                     <select id="modelSel">${modelOptions}</select>
@@ -789,13 +854,14 @@
 
                   </div>
                   </div>
-                  <textarea id="question" placeholder="Type a question or paste Vision-transcribed text..."></textarea>
+                  <textarea id="question" aria-label="Câu hỏi" placeholder="Bạn đang muốn hiểu điều gì?" maxlength="16000"></textarea>
                   <div id="scrapeActions">
                     <span id="scrapeInfo" style="flex:1;font-size:12px;color:#5b21b6;font-weight:600;"></span>
                     <button id="copyScrapedBtn" style="flex:0 0 auto;background:#6b7280;color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px Arial;">📋 Copy</button>
                     <button id="sendScrapedBtn" style="flex:0 0 auto;background:#4769e8;color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;font:600 12px Arial;">🤖 Gửi AI</button>
                     <button id="hideScrapeBtn" style="flex:0 0 auto;background:#9ca3af;color:#fff;border:0;border-radius:6px;padding:6px 8px;cursor:pointer;font:600 12px Arial;">✕</button>
                   </div>
+                  <div class="composer-note"><span>Enter gửi · Shift+Enter xuống dòng · Ctrl+V dán ảnh</span><span id="draftState">Bản nháp tự lưu</span></div>
                   <div class="row">
                     <button class="b" id="sendBtn">Gửi ↗</button>
                     <button class="b" id="stopBtn">⏹ Dừng</button>
@@ -813,9 +879,15 @@
                   </nav>
                   <div id="infoBody">
                     <section class="infoSection active" id="info-updates">
-                      <h3>Bản hiện tại 10.4.0</h3>
+                      <h3>Bản hiện tại 11.0.0</h3>
                       <ul>
-                        <li>Mỗi mã chỉ đăng nhập trên một cài đặt tại một thời điểm; đăng nhập ở thiết bị khác sẽ thu hồi phiên cũ. Phiên được chia sẻ giữa các website trong cùng hồ sơ Tampermonkey.</li>
+                        <li>Giao diện mới lấy cảm hứng từ góc học Đài Loan: nền giấy ấm, xanh ngọc, chế độ sáng/tối và bố cục cho điện thoại.</li>
+                        <li>Thêm tìm lịch sử, xuất Markdown, sao chép đáp án, tự lưu bản nháp, tải ảnh và xem hạn mức từ server.</li>
+                        <li>Phiên đăng nhập được lưu trong bộ nhớ riêng của Tampermonkey; quota cộng tác dùng chung theo mã truy cập.</li>
+                        <li>Chỉ giải khi người dùng yêu cầu giải bài; câu hỏi khái niệm và trò chuyện thường được trả lời tự nhiên.</li>
+                        <li>Ảnh chụp, ảnh dán và ảnh đề gửi cho AI hiện hiển thị trực tiếp trong khung chat; không còn hiện prompt kỹ thuật hoặc nhãn nguồn ảnh.</li>
+                        <li>Cải thiện giải thích ký hiệu/hàm số; mô tả hình học có căn cứ, không đoán tính chất từ hình vẽ; trình bày bảng khi phù hợp.</li>
+                        <li>Mỗi mã có giới hạn thiết bị riêng; cần quản trị viên reset khi đã đủ số thiết bị. Phiên được chia sẻ giữa các website trong cùng hồ sơ Tampermonkey.</li>
                         <li>Nhận diện hộp thoại câu hỏi Violympic và gửi trọn câu hỏi cùng đáp án ảnh qua Vision từ nút “Lấy cả trang”.</li>
                         <li>Cải thiện chụp GameCanvas trên IOE và nhận diện một số bố cục câu hỏi VioEdu.</li>
                         <li>Sửa hiển thị LaTeX và điều chỉnh AI theo ngôn ngữ, môn học của đề.</li>
@@ -836,13 +908,13 @@
                         <li>Nếu nội dung trang không được nhận diện, dùng “Chụp & Hỏi AI” hoặc dán ảnh vào khung chat.</li>
                       </ul>
                       <h3>Multi-agent</h3>
-                      <p>Bật Multi-agent để model tạo đáp án rồi nhận phản biện và lượt sửa có giới hạn. Tối đa 3 lần cộng tác mỗi ngày trên trình duyệt; số lượt sửa chọn ở danh sách bên cạnh.</p>
+                      <p>Bật Multi-agent để model tạo đáp án rồi nhận phản biện và lượt sửa có giới hạn. Tối đa 3 lần cộng tác mỗi ngày theo mã truy cập, đặt lại lúc 07:00 giờ Việt Nam; số lượt sửa chọn ở danh sách bên cạnh.</p>
                     </section>
                     <section class="infoSection" id="info-terms">
                       <h3>Điều khoản sử dụng</h3>
                       <ol>
                         <li>Công cụ dành cho tự học, ôn tập và tham khảo; không sử dụng trong bài thi hoặc hoạt động bị cấm công cụ hỗ trợ.</li>
-                        <li>Mỗi mã chỉ có một phiên thiết bị hoạt động. Đăng nhập trên thiết bị mới sẽ đăng xuất thiết bị trước đó; trong cùng hồ sơ Tampermonkey, phiên được dùng chung giữa IOE, VioEdu và Violympic.</li>
+                        <li>Mỗi mã có giới hạn thiết bị theo gói được cấp. Khi đã đủ, cần quản trị viên reset trước khi đổi thiết bị; trong cùng hồ sơ Tampermonkey, phiên được dùng chung giữa IOE, VioEdu và Violympic.</li>
                         <li>AI có thể đọc sai đề hoặc trả lời sai. Người dùng cần tự kiểm tra lời giải và đáp án.</li>
                         <li>Không chia sẻ mã truy cập. Câu hỏi và ảnh gửi lên sẽ được xử lý qua server của dịch vụ và nhà cung cấp AI.</li>
                         <li>Dịch vụ, model và tính năng có thể thay đổi hoặc tạm ngừng; không cam kết hoạt động liên tục hay kết quả luôn chính xác.</li>
@@ -888,6 +960,7 @@
                 authState = 'unlocked';
                 try { lockView.classList.remove('visible'); } catch (_) {}
                 try { appView.style.display = 'block'; } catch (_) {}
+                setTimeout(refreshAccount, 0);
                 console.log('[IOE AI V10.1] Hiện app view');
             }
 
@@ -1021,6 +1094,79 @@
 
 
             let busy = false, history = loadChatHistory(), controller = null;
+            let account = null;
+            let followLatest = true;
+            messages.addEventListener('scroll', () => {
+                followLatest = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 90;
+            });
+            function scrollLatest() { if (followLatest) messages.scrollTop = messages.scrollHeight; }
+            async function refreshAccount() {
+                if (authState !== 'unlocked') return;
+                try {
+                    const response = await fetch(BACKEND_URL + '/api/account', {
+                        headers: { Authorization: 'Bearer ' + await getToken(), 'X-Device-ID': await getInstallationId() },
+                        signal: AbortSignal.timeout(12000),
+                    });
+                    if (!response.ok) throw new Error('Unavailable');
+                    account = await response.json();
+                    $('accountUsage').textContent = `${account.requestsToday}/${account.dailyLimit || '∞'} lượt · ${account.multiAgentRemaining}/3 cộng tác`;
+                    $('accountUsage').title = `Chat ${account.chatToday}/${account.chatLimit || '∞'} · Ảnh ${account.visionToday}/${account.visionLimit || '∞'}. Đặt lại lúc 07:00 giờ Việt Nam (00:00 UTC).`;
+                    for (const option of modelSel.options) option.disabled = account.blockedModels.includes(option.value);
+                } catch (_) { $('accountUsage').textContent = 'Hạn mức: chưa tải được'; }
+            }
+            function showWelcome() {
+                if (messages.querySelector('.msg')) return;
+                const welcome = document.createElement('div');
+                welcome.className = 'welcome';
+                welcome.innerHTML = '<div class="eyebrow">學習室 / MỖI NGÀY MỘT CHÚT</div><h2>Học chậm.<br>Hiểu sâu.</h2><p>Một câu hỏi nhỏ cũng mở ra một góc nhìn mới. Nhập câu hỏi, dán ảnh hoặc chụp đề để bắt đầu.</p><div class="quick-prompts"></div><div class="welcome-rule"></div>';
+                for (const text of ['Giải thích dễ hiểu', 'Gợi ý từng bước', 'Kiểm tra lời giải']) {
+                    const button = document.createElement('button'); button.textContent = text;
+                    button.onclick = () => { question.value = text + ': '; question.focus(); question.dispatchEvent(new Event('input')); };
+                    welcome.querySelector('.quick-prompts').appendChild(button);
+                }
+                messages.appendChild(welcome);
+            }
+            panel.dataset.theme = localStorage.getItem('ioeai_theme') === 'dark' ? 'dark' : 'light';
+            $('themeBtn').onclick = () => {
+                panel.dataset.theme = panel.dataset.theme === 'dark' ? 'light' : 'dark';
+                localStorage.setItem('ioeai_theme', panel.dataset.theme);
+            };
+            $('settingsBtn').onclick = () => {
+                const controls = $('advancedControls'); controls.hidden = !controls.hidden;
+                $('settingsBtn').setAttribute('aria-expanded', String(!controls.hidden));
+            };
+            $('searchBtn').onclick = () => {
+                const search = $('historySearch'); search.hidden = !search.hidden;
+                $('searchBtn').setAttribute('aria-expanded', String(!search.hidden));
+                if (!search.hidden) search.focus();
+                else { search.value = ''; search.dispatchEvent(new Event('input')); }
+            };
+            $('historySearch').oninput = () => {
+                const text = $('historySearch').value.trim().toLocaleLowerCase('vi');
+                messages.querySelectorAll('.msg').forEach(message => message.classList.toggle('search-hidden', !message.textContent.toLocaleLowerCase('vi').includes(text)));
+            };
+            $('exportChatBtn').onclick = () => {
+                if (!history.length) { setStatus('Chưa có cuộc trò chuyện để xuất.'); return; }
+                const markdown = '# Góc học tập\n\n' + history.map(item => `## ${item.role === 'user' ? 'Bạn' : 'Trợ lý'}\n\n${item.content}`).join('\n\n---\n\n');
+                const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
+                const link = document.createElement('a'); link.href = url; link.download = `goc-hoc-tap-${new Date().toISOString().slice(0, 10)}.md`; link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                setStatus('Đã xuất cuộc trò chuyện.');
+            };
+            question.value = localStorage.getItem('ioeai_draft') || '';
+            question.addEventListener('input', () => {
+                try { localStorage.setItem('ioeai_draft', question.value); $('draftState').textContent = 'Đã lưu bản nháp'; } catch (_) { $('draftState').textContent = 'Chưa lưu được bản nháp'; }
+            });
+            $('quickCaptureBtn').onclick = () => $('capBtn').click();
+            $('quickScrapeBtn').onclick = () => $('scrapeBtn').click();
+            $('uploadImageBtn').onclick = () => $('imageFileInput').click();
+            $('imageFileInput').onchange = async event => {
+                const file = event.target.files[0]; event.target.value = '';
+                if (!file || busy || authState !== 'unlocked') return;
+                if (file.size > 3 * 1024 * 1024) { setStatus('Ảnh tối đa 3 MB. Hãy chọn ảnh nhỏ hơn.'); return; }
+                setBusy(true); await handleImageWithVision(file);
+            };
+            let pendingChatImagePreview = null;
             const setStatus = t => {
                 const el = $('status');
                 if (el) el.textContent = t;
@@ -1136,9 +1282,19 @@
             function renderAssistantMessage(element, text) {
                 element.innerHTML = renderMarkdown(normalizeMathOutput(text));
                 renderMath(element);
+                if (element.classList.contains('bot') && text) {
+                    const copy = document.createElement('button'); copy.className = 'copy-answer'; copy.textContent = 'Sao chép';
+                    copy.onclick = async () => {
+                        try { await navigator.clipboard.writeText(text); copy.textContent = 'Đã sao chép ✓'; }
+                        catch (_) { setStatus('Không truy cập được clipboard. Bạn có thể chọn nội dung để sao chép.'); }
+                    };
+                    element.appendChild(copy);
+                }
             }
 
             function addMessage(role, text) {
+                messages.querySelector('.welcome')?.remove();
+                followLatest = true;
                 const d = document.createElement('div');
                 d.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
                 // Scraped questions and user-entered prompts can contain LaTeX too.
@@ -1149,11 +1305,35 @@
                 return d;
             }
 
-            history.forEach(item => addMessage(item.role, item.content));
+            function addImageMessage(imageSrc, caption = '') {
+                messages.querySelector('.welcome')?.remove();
+                const d = document.createElement('div');
+                d.className = 'msg user';
+                const image = document.createElement('img');
+                image.className = 'msg-image';
+                image.src = imageSrc;
+                image.alt = 'Ảnh câu hỏi đã gửi';
+                image.loading = 'lazy';
+                d.appendChild(image);
+                if (caption) {
+                    const text = document.createElement('div');
+                    text.className = 'msg-caption';
+                    text.textContent = caption;
+                    d.appendChild(text);
+                }
+                messages.appendChild(d);
+                messages.scrollTop = messages.scrollHeight;
+                return d;
+            }
+
+            history.forEach(item => item.image
+                ? addImageMessage(item.image, item.caption || '')
+                : addMessage(item.role, item.content));
+            showWelcome();
 
             function setBusy(v) {
                 busy = v;
-                ['capBtn','sendBtn','scrapeBtn'].forEach(id => {
+                ['capBtn','sendBtn','scrapeBtn','quickCaptureBtn','quickScrapeBtn','uploadImageBtn','clearBtn','exportChatBtn'].forEach(id => {
                     const el = $(id);
                     if (el) el.disabled = v;
                 });
@@ -1168,6 +1348,8 @@
                 panel.classList.remove('hidden');
                 const l = $('launcher');
                 if (l) l.style.display = 'none';
+                refreshAccount();
+                question.focus();
             };
             const closePanel = () => {
                 panel.classList.add('hidden');
@@ -1209,6 +1391,7 @@
             if (logoutBtnEl) logoutBtnEl.onclick = () => {
                 if (busy) return;
                 if (!confirm('Đăng xuất khỏi trợ lý AI?')) return;
+                controller?.abort();
                 clearToken().then(showLock);
             };
 
@@ -1413,6 +1596,21 @@
                 img.src = url;
             });
 
+            async function makeChatImageThumbnail(file) {
+                try {
+                    const img = await loadImageFromFile(file);
+                    const scale = Math.min(1, 360 / (img.naturalWidth || img.width), 280 / (img.naturalHeight || img.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+                    canvas.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    return canvas.toDataURL('image/jpeg', 0.5);
+                } catch (_) { return ''; }
+            }
+
             async function apiFetch(path, body) {
                 const headers = { 'Content-Type': 'application/json' };
                 const token = await getToken();
@@ -1422,6 +1620,7 @@
                     method: 'POST',
                     headers,
                     body: JSON.stringify(body),
+                    signal: controller ? AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
                 });
             }
             // GROQ VISION TRANSCRIPTION
@@ -1434,19 +1633,21 @@
                     throw new Error('AUTH');
                 }
                 const data = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                if (!res.ok) {
+                    const retry = data.retryAfter ? ` Thử lại sau ${data.retryAfter} giây.` : '';
+                    throw new Error((data.error || `HTTP ${res.status}`) + retry);
+                }
                 if (data.text) return data.text;
                 throw new Error('Vision API returned no text');
             }
 
             // CHAT
-            async function callGroq(userContent, historyText, model, imageDataUrl = null) {
+            async function callGroq(userContent, historyText, model, imageDataUrl = null, historyImage = '', historyCaption = '') {
                 const useMultiAgent = multiAgentEl.checked && !imageDataUrl;
-                if (useMultiAgent && multiAgentUsageCount() >= MULTI_AGENT_DAILY_LIMIT) {
+                if (useMultiAgent && account && account.multiAgentRemaining <= 0) {
                     setStatus('Daily multi-agent limit reached (3 runs). Use a single model or try again tomorrow.');
                     return;
                 }
-                if (useMultiAgent) recordMultiAgentUse();
                 setBusy(true);
                 const stopBtn = $('stopBtn');
                 if (stopBtn) stopBtn.style.display = 'block';
@@ -1456,7 +1657,7 @@
 
                 const messagesForBackend = [
                     { role: 'system', content: SYSTEM_PROMPT },
-                    ...history.slice(-CHAT_CONTEXT_MAX),
+                    ...history.slice(-CHAT_CONTEXT_MAX).map(({ role, content }) => ({ role, content })),
                     { role: 'user', content: typeof userContent === 'string' ? userContent : '' },
                 ];
 
@@ -1492,7 +1693,12 @@
 
                     if (!response.ok) {
                         const errText = await response.text();
-                        throw new Error(`Backend HTTP ${response.status}: ${errText.slice(0, 300)}`);
+                        let detail = errText.slice(0, 300);
+                        try {
+                            const payload = JSON.parse(errText);
+                            detail = (payload.error || detail) + (payload.retryAfter ? ` Thử lại sau ${payload.retryAfter} giây.` : '');
+                        } catch (_) {}
+                        throw new Error(detail || `Backend HTTP ${response.status}`);
                     }
 
                     const reader = response.body.getReader();
@@ -1507,6 +1713,7 @@
                         if (data === '[DONE]') return true;
                         let obj;
                         try { obj = JSON.parse(data); } catch (_) { return false; }
+                        if (obj.error) throw new Error(obj.error.message || obj.error || 'Luồng AI gặp lỗi.');
                         const c = obj.choices && obj.choices[0]?.delta?.content;
                         if (typeof c === 'string' && c) {
                             fullText += c;
@@ -1515,7 +1722,7 @@
                                 lastRender = now;
                                 renderAssistantMessage(answer, fullText);
                             }
-                            messages.scrollTop = messages.scrollHeight;
+                            scrollLatest();
                         }
                         return false;
                     };
@@ -1526,12 +1733,11 @@
                         const lines = buffer.split('\n');
                         buffer = lines.pop() || '';
                         for (const line of lines) {
-                            try {
-                                if (processLine(line.trimEnd())) { ended = true; break; }
-                            } catch (_) {}
+                            if (processLine(line.trimEnd())) { ended = true; break; }
                         }
                         if (r.done) {
-                            if (buffer.trim()) { try { processLine(buffer.trimEnd()); } catch (_) {} }
+                            if (buffer.trim() && processLine(buffer.trimEnd())) ended = true;
+                            if (!ended) throw new Error('Kết nối bị ngắt trước khi AI trả lời xong. Hãy thử lại.');
                             break;
                         }
                     }
@@ -1541,18 +1747,18 @@
                     renderAssistantMessage(answer, fullText);
 
                     history.push(
-                        { role: 'user', content: historyText },
+                        { role: 'user', content: historyText, ...(historyImage ? { image: historyImage, caption: historyCaption } : {}) },
                         { role: 'assistant', content: fullText }
                     );
                     if (history.length > CHAT_HISTORY_MAX) history = history.slice(-CHAT_HISTORY_MAX);
                     saveChatHistory(history);
-                    setStatus('Done. Recent conversation history is saved on this device.');
+                    setStatus('Đã trả lời · Lịch sử được lưu trên thiết bị này.');
                 } catch (err) {
                     if (err.name === 'AbortError') {
                         renderAssistantMessage(answer, (fullText || '') + '\n\nStopped.');
                         if (fullText) {
                             history.push(
-                                { role: 'user', content: historyText },
+                                { role: 'user', content: historyText, ...(historyImage ? { image: historyImage, caption: historyCaption } : {}) },
                                 { role: 'assistant', content: fullText }
                             );
                             if (history.length > CHAT_HISTORY_MAX) history = history.slice(-CHAT_HISTORY_MAX);
@@ -1566,6 +1772,7 @@
                     controller = null;
                     if (stopBtn) stopBtn.style.display = 'none';
                     setBusy(false);
+                    refreshAccount();
                 }
             }
 
@@ -1584,22 +1791,28 @@
             }
 
             async function transcribeImageToInput(file) {
+                pendingChatImagePreview = null;
+                controller = new AbortController();
+                $('stopBtn').style.display = 'block';
                 showPreview(file);
                 try {
                     const text = await transcribeImageWithVision(file);
+                    pendingChatImagePreview = await makeChatImageThumbnail(file);
                     clearPreview();
                     setBusy(false);
                     appendToQuestion(text);
-                    setStatus('Vision transcription added to the input.');
+                    setStatus('Đã chép đề vào bản nháp. Bạn có thể sửa trước khi gửi.');
+                    question.dispatchEvent(new Event('input'));
                 } catch (err) {
                     if (err.message === 'AUTH') return;
                     clearPreview();
                     setBusy(false);
-                    setStatus('Vision transcription failed: ' + (err.message || err));
-                }
+                    setStatus(err.name === 'AbortError' ? 'Đã dừng đọc ảnh.' : 'Không đọc được ảnh: ' + (err.message || err));
+                } finally { controller = null; $('stopBtn').style.display = 'none'; setBusy(false); refreshAccount(); }
             }
 
-            async function handleImageWithVision(file, label) {
+            async function handleImageWithVision(file) {
+                pendingChatImagePreview = null;
                 if (imageModeSel.value !== 'solve') {
                     await transcribeImageToInput(file);
                     return;
@@ -1608,10 +1821,15 @@
                 setStatus('Sending image to ' + visionSel.value + ' for solving...');
                 try {
                     const dataUrl = await fileToDataURL(file);
+                    const thumbnail = await makeChatImageThumbnail(file);
                     clearPreview();
-                    const prompt = "Read the question in the image carefully and answer the actual task, whatever its subject; do not assume it is a math problem. For English exercises, answer in natural English; otherwise follow the language of the question. Give the answer first, then a brief explanation. If it is mathematics, use LaTeX for formulas and geometry notation. Read labels carefully, and say when a diagram mark is unclear instead of guessing.";
-                    addMessage('user', prompt + ' [' + label + ']');
-                    await callGroq(prompt, prompt, visionSel.value, dataUrl);
+                    const caption = question.value.trim();
+                    const prompt = caption || 'Inspect the attached image and infer the user’s intent. If it clearly shows a school exercise, solve it. If it is a general image or conversational question, respond naturally to what the user is asking. If the intent is unclear, briefly describe what is visible and ask what the user wants to know. Never guess unclear diagram information.';
+                    const historyText = caption || 'Người dùng gửi kèm một ảnh câu hỏi.';
+                    addImageMessage(dataUrl, caption);
+                    question.value = '';
+                    pendingChatImagePreview = null;
+                    await callGroq(prompt, historyText, visionSel.value, dataUrl, thumbnail, caption);
                 } catch (err) {
                     clearPreview();
                     if (err.message === 'AUTH') return;
@@ -1650,7 +1868,7 @@
                     return;
                 }
 
-                await handleImageWithVision(file, 'screenshot');
+                await handleImageWithVision(file);
             }
 
             const capBtnEl = $('capBtn');
@@ -1738,7 +1956,7 @@
                             setStatus('Capturing the full question dialog...');
                             try {
                                 const file = await captureQuestionDialog(dialog);
-                                await handleImageWithVision(file, 'full Violympic question');
+                                await handleImageWithVision(file);
                             } catch (err) {
                                 setStatus('Could not capture the dialog; switching to manual region selection.');
                                 setBusy(false);
@@ -1820,7 +2038,7 @@
                     return;
                 }
 
-                await handleImageWithVision(file, 'pasted image');
+                await handleImageWithVision(file);
             }
 
             document.addEventListener('paste', e => {
@@ -1849,9 +2067,13 @@
                 const raw = question.value.trim();
                 if (!raw) return;
                 clearPreview();
-                addMessage('user', raw);
+                const attachedImage = pendingChatImagePreview;
+                if (attachedImage) addImageMessage(attachedImage, raw);
+                else addMessage('user', raw);
+                pendingChatImagePreview = null;
                 question.value = '';
-                callGroq(raw, raw, modelSel.value);
+                localStorage.removeItem('ioeai_draft');
+                callGroq(raw, raw, modelSel.value, null, attachedImage || '', attachedImage ? raw : '');
             }
             const sendBtnEl = $('sendBtn');
             if (sendBtnEl) sendBtnEl.onclick = sendText;
@@ -1864,8 +2086,12 @@
                 if (busy) return;
                 hideScrapeActions();
                 history = [];
+                pendingChatImagePreview = null;
                 saveChatHistory(history);
                 messages.replaceChildren();
+                showWelcome();
+                question.value = '';
+                localStorage.removeItem('ioeai_draft');
                 clearPreview();
                 setStatus('Đã xóa cuộc trò chuyện.');
             };
