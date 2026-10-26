@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      11.0.1
+// @version      11.0.2
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -756,7 +756,7 @@ Presentation:
               @media(max-width:450px){#panel{right:8px;bottom:72px;width:calc(100vw - 16px)}}
               /* Taipei study room: warm paper, jade ink and a small vermilion seal. */
               #panel,#lockBox,#infoBox{--paper:#f7f4ed;--surface:#fffdf8;--ink:#253e35;--muted:#747e72;--edge:#dedfd2;--jade:#315c4d;--soft:#e8eee4;--seal:#bf6248;font-family:Inter,"Segoe UI",system-ui,sans-serif}
-              #panel[data-theme="dark"]{--paper:#18251f;--surface:#203028;--ink:#e9eee1;--muted:#a5b29f;--edge:#3b4b3d;--jade:#9dc6a3;--soft:#2b3c30;--seal:#e49a79;color-scheme:dark}
+              #panel[data-theme="dark"],#infoBox[data-theme="dark"]{--paper:#18251f;--surface:#203028;--ink:#e9eee1;--muted:#a5b29f;--edge:#3b4b3d;--jade:#9dc6a3;--soft:#2b3c30;--seal:#e49a79;color-scheme:dark}
               #panel{width:470px;height:760px;border:1px solid var(--edge);border-radius:24px;background:var(--paper);color:var(--ink);box-shadow:0 24px 80px #1d352b30;font-size:14px}
               #head{padding:19px 20px 15px;background:var(--surface);color:var(--ink);border-bottom:1px solid var(--edge);gap:8px}
               .studio-brand{display:flex;align-items:center;gap:11px}.studio-seal{display:grid;place-items:center;width:36px;height:39px;border:1px solid var(--seal);border-radius:7px;color:var(--seal);font:700 22px Georgia,serif;transform:rotate(-4deg)}
@@ -781,6 +781,14 @@ Presentation:
               #panel button.b{background:var(--soft);color:var(--ink);font:600 11px "Segoe UI",sans-serif;padding:10px 7px;border:1px solid var(--edge);border-radius:9px}#panel #sendBtn{background:#315c4d;color:#fff;border-color:#315c4d;flex:1.5}#panel #stopBtn{background:#bf6248;color:white}#panel #clearBtn{background:transparent;color:var(--muted)}
               .composer-note{display:flex;justify-content:space-between;margin-top:7px;color:var(--muted);font-size:9px;letter-spacing:.15px}#launcher{background:#315c4d;border:1px solid #73917b;border-radius:18px;font:700 25px Georgia,serif;box-shadow:0 8px 30px #203c3540;width:54px;height:54px}
               #lockView{background:#15282090;backdrop-filter:blur(7px)}#lockBox{width:380px;border-radius:22px;background:var(--paper);color:var(--ink);padding:30px;border-color:var(--edge)}#lockTitle{font:500 29px Georgia,serif;color:var(--ink)}#lockSub{color:var(--muted);margin-top:13px;font-family:"Segoe UI",sans-serif}#unlockBtn{background:#315c4d}#codeInput{background:var(--surface);border:1px solid var(--edge);font-family:"Segoe UI",sans-serif}
+              #infoModal{background:#15282090;backdrop-filter:blur(8px);padding:20px}
+              #infoBox{width:660px;max-height:88dvh;border:1px solid var(--edge);border-radius:24px;background:var(--paper);color:var(--ink);font:13px/1.75 "Segoe UI",system-ui,sans-serif;box-shadow:0 28px 90px #12291e40}
+              #infoHeader{padding:20px 24px;background:var(--surface);color:var(--ink);border-bottom:1px solid var(--edge)}#infoHeader strong{display:block;font-size:16px;letter-spacing:-.3px}.info-eyebrow{font-size:9px;letter-spacing:2px;color:var(--seal);margin-bottom:3px}#closeInfoBtn{width:32px;height:32px;color:var(--ink);border:1px solid var(--edge);border-radius:9px;font-size:21px}#closeInfoBtn:hover{background:var(--soft)}
+              #infoTabs{gap:8px;padding:12px 24px;background:var(--surface);border-color:var(--edge)}.infoTab{border:1px solid transparent;border-radius:8px;padding:7px 12px;color:var(--muted);font:600 12px "Segoe UI",sans-serif}.infoTab.active{background:var(--soft);border-color:var(--edge);color:var(--ink)}
+              #infoBody{padding:24px;scrollbar-width:thin;scrollbar-color:var(--edge) transparent}.release-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:10px;color:var(--muted)}.release-version{border:1px solid var(--edge);background:var(--soft);color:var(--jade);border-radius:6px;padding:3px 8px;font-weight:700}.release-hero h3{font:500 34px/1.18 Georgia,"Times New Roman",serif;letter-spacing:-.7px;margin:16px 0 10px;color:var(--ink)}.release-hero p{color:var(--muted);max-width:460px;line-height:1.85}
+              .release-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:22px 0}.release-card{border:1px solid var(--edge);border-radius:13px;padding:16px;background:var(--surface)}.release-card .release-number{font-size:10px;letter-spacing:1px;color:var(--seal)}.release-card h4{font-size:13px;margin:7px 0 5px;color:var(--ink)}.release-card p{font-size:12px;color:var(--muted);line-height:1.75;margin:0}
+              .release-note{border-left:2px solid var(--seal);padding:5px 12px;color:var(--muted);font-size:11px;margin:18px 0}.release-history{border-top:1px solid var(--edge);padding-top:16px;margin-top:20px}.release-history summary{cursor:pointer;font-weight:600;font-size:12px;color:var(--ink)}.release-history ul{padding-left:20px;color:var(--muted);font-size:12px}.infoSection>h3{font-size:17px;color:var(--ink);margin:8px 0 12px}.infoSection>ul,.infoSection>ol,.infoSection>p{color:var(--muted)}.infoSection li{margin:8px 0}.info-footer{padding:12px 24px;border-top:1px solid var(--edge);background:var(--surface);display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:10px}
+              @media(max-width:520px){#infoModal{padding:10px}#infoBox{border-radius:18px;max-height:92dvh}#infoHeader{padding:16px}#infoTabs{padding:10px 16px}#infoBody{padding:18px 16px}.release-grid{grid-template-columns:1fr}.release-hero h3{font-size:29px}.info-footer{padding:12px 16px}}
               button:focus-visible{outline:2px solid var(--seal);outline-offset:3px}button:disabled{cursor:not-allowed}#messages .search-hidden{display:none!important}
               @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
               @media(max-width:520px){#panel{right:8px;bottom:76px;width:calc(100vw - 16px);min-width:0;border-radius:18px;max-height:calc(100dvh - 90px)}#head{padding:14px}#messages{padding:10px 12px}.studio-tools{padding:8px 12px;flex-wrap:wrap}#accountUsage{max-width:135px}.welcome h2{font-size:30px}}
@@ -872,7 +880,7 @@ Presentation:
               </section>
               <div id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
                 <section id="infoBox">
-                  <div id="infoHeader"><strong id="infoTitle">Trợ lý học tập · Thông tin</strong><button id="closeInfoBtn" aria-label="Đóng">×</button></div>
+                  <div id="infoHeader"><div><div class="info-eyebrow">學習室 / SỔ TAY GÓC HỌC</div><strong id="infoTitle">Mỗi lần mở, thêm một điều mới.</strong></div><button id="closeInfoBtn" aria-label="Đóng thông tin">×</button></div>
                   <nav id="infoTabs" aria-label="Thông tin trợ lý">
                     <button class="infoTab active" data-info-tab="updates">Cập nhật</button>
                     <button class="infoTab" data-info-tab="guide">Hướng dẫn</button>
@@ -880,7 +888,19 @@ Presentation:
                   </nav>
                   <div id="infoBody">
                     <section class="infoSection active" id="info-updates">
-                      <h3>Bản hiện tại 11.0.1</h3>
+                      <div class="release-hero">
+                        <div class="release-meta"><span class="release-version">v11.0.2 · Đang chạy</span><time datetime="2026-10-26">26 tháng 10, 2026</time></div>
+                        <h3>Gọn hơn để học.<br>Rõ hơn để hiểu.</h3>
+                        <p>Cửa sổ thông tin nay cùng một không gian với góc học: màu giấy ấm, nét xanh ngọc và chế độ tối đi theo lựa chọn của bạn.</p>
+                      </div>
+                      <div class="release-grid">
+                        <article class="release-card"><span class="release-number">01 / GIAO DIỆN</span><h4>Một phong cách xuyên suốt</h4><p>Cập nhật, hướng dẫn và điều khoản có giao diện mới, hỗ trợ màn hình nhỏ và sáng/tối.</p></article>
+                        <article class="release-card"><span class="release-number">02 / CÔNG THỨC</span><h4>LaTeX liền mạch</h4><p>Sửa công thức nhiều dòng và dấu gạch chéo thừa; giữ nguyên xuống dòng của ma trận.</p></article>
+                        <article class="release-card"><span class="release-number">03 / GÓC HỌC</span><h4>Giữ lại điều đáng nhớ</h4><p>Tìm trong lịch sử, xuất Markdown, sao chép đáp án và tự lưu câu hỏi đang soạn.</p></article>
+                        <article class="release-card"><span class="release-number">04 / TÀI KHOẢN</span><h4>Biết mình còn bao nhiêu lượt</h4><p>Xem lượt sử dụng từ server và dùng chung hạn mức cộng tác theo mã truy cập.</p></article>
+                      </div>
+                      <div class="release-note">Đây là phiên bản đang chạy trên trang này. Sau khi cập nhật trong Tampermonkey, hãy tải lại trang học để dùng phiên bản mới.</div>
+                      <details class="release-history"><summary>Các cải tiến từ v11.0.0 và v11.0.1</summary>
                       <ul>
                         <li>Giao diện mới lấy cảm hứng từ góc học Đài Loan: nền giấy ấm, xanh ngọc, chế độ sáng/tối và bố cục cho điện thoại.</li>
                         <li>Thêm tìm lịch sử, xuất Markdown, sao chép đáp án, tự lưu bản nháp, tải ảnh và xem hạn mức từ server.</li>
@@ -893,6 +913,7 @@ Presentation:
                         <li>Cải thiện chụp GameCanvas trên IOE và nhận diện một số bố cục câu hỏi VioEdu.</li>
                         <li>Sửa hiển thị LaTeX và điều chỉnh AI theo ngôn ngữ, môn học của đề.</li>
                       </ul>
+                      </details>
                     </section>
                     <section class="infoSection" id="info-guide">
                       <h3>Bắt đầu</h3>
@@ -922,6 +943,7 @@ Presentation:
                       </ol>
                     </section>
                   </div>
+                  <div class="info-footer"><span>GÓC HỌC TẬP · v11.0.2</span><span>Chậm một chút. Hiểu thêm một chút.</span></div>
                 </section>
               </div>
             </div>`;
@@ -1128,8 +1150,10 @@ Presentation:
                 messages.appendChild(welcome);
             }
             panel.dataset.theme = localStorage.getItem('ioeai_theme') === 'dark' ? 'dark' : 'light';
+            $('infoBox').dataset.theme = panel.dataset.theme;
             $('themeBtn').onclick = () => {
                 panel.dataset.theme = panel.dataset.theme === 'dark' ? 'light' : 'dark';
+                $('infoBox').dataset.theme = panel.dataset.theme;
                 localStorage.setItem('ioeai_theme', panel.dataset.theme);
             };
             $('settingsBtn').onclick = () => {
