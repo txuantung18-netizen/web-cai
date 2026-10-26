@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      11.0.2
+// @version      12.0.0
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -29,6 +29,7 @@
     console.log('[IOE AI V10.1] Script bắt đầu load...');
 
     const BACKEND_URL = 'https://api-groq-two.vercel.app';
+    const APP_VERSION = '12.0.0';
     const TOKEN_KEY = 'ioe_ai_auth_token_v2';
     const DEVICE_ID_KEY = 'ioe_ai_installation_id_v1';
     const SIGNED_OUT_MARKER = '__IOE_AI_SIGNED_OUT__';
@@ -75,6 +76,32 @@
     const CHAT_HISTORY_KEY = 'ioeai_chat_history_v1';
     const CHAT_HISTORY_MAX = 40;
     const CHAT_CONTEXT_MAX = 10;
+    const STUDY_DATA_KEY = 'ioeai_study_space_v1';
+    const MAX_SESSIONS = 20;
+    const MAX_MISTAKES = 100;
+    const safeThumbnail = image => typeof image === 'string' && image.length < 300000 && /^data:image\/jpeg;base64,/i.test(image) ? image : '';
+
+    function freshSession(title = 'Hội thoại mới', messages = [], draft = '') {
+        return { id: makeDeviceId(), title, subject: 'Khác', pinned: false, messages, draft, updatedAt: Date.now() };
+    }
+    function loadStudySpace() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(STUDY_DATA_KEY) || 'null');
+            if (saved && saved.version === 1 && Array.isArray(saved.sessions) && saved.sessions.length) {
+                const sessions = saved.sessions.filter(s => s && typeof s.id === 'string' && typeof s.title === 'string' && Array.isArray(s.messages))
+                    .slice(0, MAX_SESSIONS).map(s => ({ ...s, title: s.title.slice(0, 80), subject: String(s.subject || 'Khác').slice(0, 40),
+                        draft: typeof s.draft === 'string' ? s.draft.slice(0, 16000) : '', draftImage: safeThumbnail(s.draftImage),
+                        messages: s.messages.filter(m => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-CHAT_HISTORY_MAX)
+                            .map(m => ({ role: m.role, content: m.content.slice(0, 60000), ...(safeThumbnail(m.image) ? { image: m.image, caption: String(m.caption || '').slice(0, 16000) } : {}) })) }));
+                if (sessions.length) return { version: 1, activeId: sessions.some(s => s.id === saved.activeId) ? saved.activeId : sessions[0].id,
+                    sessions, mistakes: Array.isArray(saved.mistakes) ? saved.mistakes.filter(m => m && typeof m.id === 'string' && typeof m.question === 'string' && typeof m.answer === 'string').slice(0, MAX_MISTAKES) : [] };
+            }
+        } catch (_) {}
+        // The legacy history and draft remain untouched as a migration backup.
+        const legacy = loadChatHistory();
+        const session = freshSession(legacy.length ? 'Lịch sử trước đây' : 'Hội thoại mới', legacy, localStorage.getItem('ioeai_draft') || '');
+        return { version: 1, activeId: session.id, sessions: [session], mistakes: [] };
+    }
     const VISION_MODELS = [
         ['qwen/qwen3.8-27b', 'Qwen 3.8 27B Vision'],
     ];
@@ -166,9 +193,6 @@ Presentation:
                     ...(typeof m.caption === 'string' ? { caption: m.caption.slice(0, 4000) } : {}),
                 }));
         } catch (_) { return []; }
-    }
-    function saveChatHistory(items) {
-        try { localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(items.slice(-CHAT_HISTORY_MAX))); } catch (_) {}
     }
 
     const KATEX_OPTS = {
@@ -789,6 +813,10 @@ Presentation:
               .release-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:22px 0}.release-card{border:1px solid var(--edge);border-radius:13px;padding:16px;background:var(--surface)}.release-card .release-number{font-size:10px;letter-spacing:1px;color:var(--seal)}.release-card h4{font-size:13px;margin:7px 0 5px;color:var(--ink)}.release-card p{font-size:12px;color:var(--muted);line-height:1.75;margin:0}
               .release-note{border-left:2px solid var(--seal);padding:5px 12px;color:var(--muted);font-size:11px;margin:18px 0}.release-history{border-top:1px solid var(--edge);padding-top:16px;margin-top:20px}.release-history summary{cursor:pointer;font-weight:600;font-size:12px;color:var(--ink)}.release-history ul{padding-left:20px;color:var(--muted);font-size:12px}.infoSection>h3{font-size:17px;color:var(--ink);margin:8px 0 12px}.infoSection>ul,.infoSection>ol,.infoSection>p{color:var(--muted)}.infoSection li{margin:8px 0}.info-footer{padding:12px 24px;border-top:1px solid var(--edge);background:var(--surface);display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:10px}
               @media(max-width:520px){#infoModal{padding:10px}#infoBox{border-radius:18px;max-height:92dvh}#infoHeader{padding:16px}#infoTabs{padding:10px 16px}#infoBody{padding:18px 16px}.release-grid{grid-template-columns:1fr}.release-hero h3{font-size:29px}.info-footer{padding:12px 16px}}
+              .session-bar{display:flex;gap:6px;padding:8px 15px;background:var(--surface);border-bottom:1px solid var(--edge);align-items:center}.session-bar select{min-width:0!important;font:11px "Segoe UI",sans-serif!important}.session-bar button,.study-button{border:1px solid var(--edge);background:var(--soft);color:var(--ink);border-radius:8px;padding:7px 9px;cursor:pointer;font:11px "Segoe UI",sans-serif;white-space:nowrap}
+              #libraryPane{flex:1;min-height:0;overflow:auto;background:var(--paper);padding:16px}#libraryPane[hidden],.review-pane[hidden]{display:none}.library-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.library-head h3{margin:0;font-size:17px;letter-spacing:-.5px}.study-muted{font-size:11px;color:var(--muted);line-height:1.7}.study-card{border:1px solid var(--edge);background:var(--surface);border-radius:12px;padding:13px;margin:10px 0}.study-card h4{font-size:13px;margin:0 0 5px;overflow-wrap:anywhere}.study-form label{display:block;font-size:11px;color:var(--muted);margin:9px 0 4px}.study-form input,.study-form select,.study-search{width:100%;background:var(--surface);color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:9px;font:12px "Segoe UI",sans-serif}.study-form textarea{height:90px!important;min-height:70px!important;max-height:240px!important}.study-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.study-button.primary{background:#315c4d;color:white;border-color:#315c4d}.study-button.danger{color:var(--seal)}.study-card details{font-size:12px;overflow-wrap:anywhere}.study-card summary{cursor:pointer;color:var(--jade)}.study-card pre{white-space:pre-wrap;font:12px/1.7 "Segoe UI",sans-serif;color:var(--ink)}.mistake-image{display:block;max-width:100%;max-height:130px;border-radius:8px;margin:8px 0}.message-actions{display:flex;gap:6px;flex-wrap:wrap}.message-actions .copy-answer{display:inline-block}
+              .review-pane{position:absolute;inset:0;z-index:4;background:var(--paper);color:var(--ink);display:flex;flex-direction:column;padding:18px;overflow:auto}.review-pane h3{font:500 25px Georgia,serif;margin:0}.review-pane img{display:block;max-width:100%;max-height:210px;object-fit:contain;flex-shrink:0;background:white;border:1px solid var(--edge);border-radius:10px;margin:12px 0}.review-pane label{font-size:11px;color:var(--muted)}#panel #reviewText{flex:1;min-height:120px;max-height:none;resize:none;background:var(--surface)}#reviewMessage{color:var(--seal);font-size:11px;min-height:18px;margin-top:6px}
+              .study-exercise{font-size:12px;overflow-wrap:anywhere;line-height:1.75}.study-exercise p{margin:7px 0}.study-exercise .katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0}.message-actions{align-items:center}
               button:focus-visible{outline:2px solid var(--seal);outline-offset:3px}button:disabled{cursor:not-allowed}#messages .search-hidden{display:none!important}
               @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
               @media(max-width:520px){#panel{right:8px;bottom:76px;width:calc(100vw - 16px);min-width:0;border-radius:18px;max-height:calc(100dvh - 90px)}#head{padding:14px}#messages{padding:10px 12px}.studio-tools{padding:8px 12px;flex-wrap:wrap}#accountUsage{max-width:135px}.welcome h2{font-size:30px}}
@@ -825,6 +853,9 @@ Presentation:
                   <span id="accountUsage" role="status">Hạn mức: chưa tải</span>
                 </div>
                 <input id="historySearch" type="search" placeholder="Tìm nội dung trong cuộc trò chuyện…" aria-label="Tìm trong cuộc trò chuyện" hidden>
+                <div class="session-bar"><select id="sessionSel" aria-label="Chọn hội thoại"></select><button id="newSessionBtn" title="Tạo hội thoại mới">＋ Mới</button><button id="sessionsBtn">Hội thoại</button><button id="mistakesBtn">Bài sai <span id="mistakeCount">0</span></button></div>
+                <div id="studyStorageWarning" class="release-note" role="alert" hidden></div>
+                <section id="libraryPane" hidden aria-label="Sổ học tập"><div class="library-head"><h3 id="libraryTitle">Hội thoại</h3><button id="closeLibraryBtn" class="study-button">Về chat</button></div><div id="libraryContent"></div></section>
                 <div id="messages"></div>
                 <div id="inputArea">
                   <img id="preview" alt="">
@@ -842,8 +873,8 @@ Presentation:
                   <div class="row">
                     <span class="lbl">Image mode:</span>
                     <select id="imageModeSel" title="Choose what Vision does with an image">
-                      <option value="solve">Send image to Vision and solve</option>
-                      <option value="transcribe">Transcribe into chat</option>
+                      <option value="review">Đọc ảnh → kiểm tra đề → giải</option>
+                      <option value="transcribe">Chỉ chép đề vào bản nháp</option>
                     </select>
                   </div>
                   <div class="row">
@@ -877,6 +908,15 @@ Presentation:
                     <button class="b" id="clearBtn">Xóa trò chuyện</button>
                   </div>
                 </div>
+                <section id="imageReview" class="review-pane" hidden role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
+                  <div class="library-head"><h3 id="reviewTitle">Kiểm tra đề trước khi giải</h3><button id="discardReviewBtn" class="study-button" aria-label="Hủy bản chép đề">×</button></div>
+                  <p class="study-muted">Đối chiếu số, dấu và ký hiệu với ảnh. Nội dung bạn sửa bên dưới sẽ được gửi cho AI giải; AI chưa giải đề này.</p>
+                  <img id="reviewImage" alt="Ảnh đề gốc để đối chiếu">
+                  <label for="reviewText">Đề bài và ghi chú hình vẽ</label><textarea id="reviewText" maxlength="16000"></textarea>
+                  <div id="reviewMessage" role="status"></div>
+                  <div class="study-actions"><button id="reviewSolveBtn" class="study-button primary">Xác nhận và giải</button><button id="reviewDraftBtn" class="study-button">Đưa vào bản nháp</button></div>
+                  <p class="study-muted">Đọc ảnh dùng một lượt Vision. Xác nhận giải dùng thêm một lượt chat.</p>
+                </section>
               </section>
               <div id="infoModal" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
                 <section id="infoBox">
@@ -889,18 +929,18 @@ Presentation:
                   <div id="infoBody">
                     <section class="infoSection active" id="info-updates">
                       <div class="release-hero">
-                        <div class="release-meta"><span class="release-version">v11.0.2 · Đang chạy</span><time datetime="2026-10-26">26 tháng 10, 2026</time></div>
-                        <h3>Gọn hơn để học.<br>Rõ hơn để hiểu.</h3>
-                        <p>Cửa sổ thông tin nay cùng một không gian với góc học: màu giấy ấm, nét xanh ngọc và chế độ tối đi theo lựa chọn của bạn.</p>
+                        <div class="release-meta"><span class="release-version">v${APP_VERSION} · Đang chạy</span><time datetime="2026-10-26">26 tháng 10, 2026</time></div>
+                        <h3>Mỗi bài sai.<br>Một lần hiểu sâu.</h3>
+                        <p>Kiểm tra đề trước khi giải, ghi lại điều cần sửa và giữ từng môn học trong một hội thoại riêng.</p>
                       </div>
                       <div class="release-grid">
-                        <article class="release-card"><span class="release-number">01 / GIAO DIỆN</span><h4>Một phong cách xuyên suốt</h4><p>Cập nhật, hướng dẫn và điều khoản có giao diện mới, hỗ trợ màn hình nhỏ và sáng/tối.</p></article>
-                        <article class="release-card"><span class="release-number">02 / CÔNG THỨC</span><h4>LaTeX liền mạch</h4><p>Sửa công thức nhiều dòng và dấu gạch chéo thừa; giữ nguyên xuống dòng của ma trận.</p></article>
-                        <article class="release-card"><span class="release-number">03 / GÓC HỌC</span><h4>Giữ lại điều đáng nhớ</h4><p>Tìm trong lịch sử, xuất Markdown, sao chép đáp án và tự lưu câu hỏi đang soạn.</p></article>
-                        <article class="release-card"><span class="release-number">04 / TÀI KHOẢN</span><h4>Biết mình còn bao nhiêu lượt</h4><p>Xem lượt sử dụng từ server và dùng chung hạn mức cộng tác theo mã truy cập.</p></article>
+                        <article class="release-card"><span class="release-number">01 / ĐỌC ẢNH</span><h4>Đúng đề rồi mới giải</h4><p>Đối chiếu ảnh và bản chép, sửa số hoặc ký hiệu rồi xác nhận. Có thể giữ lại bản nháp để gửi sau.</p></article>
+                        <article class="release-card"><span class="release-number">02 / SỔ BÀI SAI</span><h4>Nhớ vì sao mình sai</h4><p>Lưu đề và lời giải tham khảo, ghi nguyên nhân, đánh dấu đã ôn và mở buổi ôn với AI.</p></article>
+                        <article class="release-card"><span class="release-number">03 / HỘI THOẠI</span><h4>Mỗi môn một góc riêng</h4><p>Đặt tên, chọn môn, ghim và chuyển hội thoại. Mỗi hội thoại có lịch sử và bản nháp độc lập.</p></article>
+                        <article class="release-card"><span class="release-number">04 / LƯU GIỮ</span><h4>Giữ lại hành trình học</h4><p>Lịch sử cũ được giữ khi nâng cấp. Xuất hội thoại Markdown hoặc sổ bài sai JSON để lưu bản sao.</p></article>
                       </div>
                       <div class="release-note">Đây là phiên bản đang chạy trên trang này. Sau khi cập nhật trong Tampermonkey, hãy tải lại trang học để dùng phiên bản mới.</div>
-                      <details class="release-history"><summary>Các cải tiến từ v11.0.0 và v11.0.1</summary>
+                      <details class="release-history"><summary>Các cải tiến trong dòng v11</summary>
                       <ul>
                         <li>Giao diện mới lấy cảm hứng từ góc học Đài Loan: nền giấy ấm, xanh ngọc, chế độ sáng/tối và bố cục cho điện thoại.</li>
                         <li>Thêm tìm lịch sử, xuất Markdown, sao chép đáp án, tự lưu bản nháp, tải ảnh và xem hạn mức từ server.</li>
@@ -926,9 +966,12 @@ Presentation:
                       <ul>
                         <li>“Lấy cả trang”: tự lấy câu hỏi từ bố cục được hỗ trợ; nếu đang mở hộp thoại câu hỏi Violympic, trợ lý chụp toàn hộp thoại gồm cả đáp án dạng ảnh.</li>
                         <li>“Chụp & Hỏi AI”: chụp trang, kéo chọn vùng cần đọc rồi gửi ảnh cho Vision.</li>
-                        <li>Ở chế độ ảnh “Giải”, Vision trả lời câu hỏi trong ảnh. Ở chế độ “Chép đề”, Vision chuyển nội dung nhận diện được vào khung chat để bạn xem và sửa.</li>
+                        <li>Mặc định ảnh đi qua bước “Kiểm tra đề”: sửa bản chép khi cần rồi chọn “Xác nhận và giải”. Đọc ảnh dùng một lượt Vision, giải dùng thêm một lượt chat.</li>
+                        <li>Chế độ “Chỉ chép đề” đưa nội dung vào bản nháp; chưa gửi cho AI giải cho đến khi bạn bấm Gửi.</li>
                         <li>Nếu nội dung trang không được nhận diện, dùng “Chụp & Hỏi AI” hoặc dán ảnh vào khung chat.</li>
                       </ul>
+                      <h3>Hội thoại và sổ bài sai</h3>
+                      <ul><li>Dùng “＋ Mới” để mở hội thoại; đặt tên, môn học và ghim trong mục “Hội thoại”. AI chỉ nhận lịch sử của hội thoại đang mở.</li><li>Nút “Lưu bài sai” dưới câu trả lời mở sổ ghi chú. Bạn có thể sửa lời giải tham khảo, ghi nguyên nhân sai, đánh dấu đã ôn hoặc mở buổi ôn với AI.</li><li>Dữ liệu lưu trong trình duyệt trên từng website, chưa đồng bộ giữa các website hoặc thiết bị. Tối đa 20 hội thoại, 40 tin gần nhất mỗi hội thoại và 100 bài trong sổ. Hãy xuất bản sao trước khi xóa dữ liệu trình duyệt.</li></ul>
                       <h3>Multi-agent</h3>
                       <p>Bật Multi-agent để model tạo đáp án rồi nhận phản biện và lượt sửa có giới hạn. Tối đa 3 lần cộng tác mỗi ngày theo mã truy cập, đặt lại lúc 07:00 giờ Việt Nam; số lượt sửa chọn ở danh sách bên cạnh.</p>
                     </section>
@@ -943,7 +986,7 @@ Presentation:
                       </ol>
                     </section>
                   </div>
-                  <div class="info-footer"><span>GÓC HỌC TẬP · v11.0.2</span><span>Chậm một chút. Hiểu thêm một chút.</span></div>
+                  <div class="info-footer"><span>GÓC HỌC TẬP · v${APP_VERSION}</span><span>Chậm một chút. Hiểu thêm một chút.</span></div>
                 </section>
               </div>
             </div>`;
@@ -1106,7 +1149,7 @@ Presentation:
             visionSel.value = VISION_MODELS.some(([id]) => id === storedVision) ? storedVision : VISION_MODELS[0][0];
             visionSel.addEventListener('change', () => localStorage.setItem('ioeai_vision_model', visionSel.value));
             const savedImageMode = localStorage.getItem('ioeai_image_mode');
-            imageModeSel.value = savedImageMode === 'transcribe' ? 'transcribe' : 'solve';
+            imageModeSel.value = savedImageMode === 'transcribe' ? 'transcribe' : 'review';
             imageModeSel.addEventListener('change', () => localStorage.setItem('ioeai_image_mode', imageModeSel.value));
             multiAgentEl.checked = readFlag('ioeai_multi_agent', false);
             multiAgentEl.addEventListener('change', () => writeFlag('ioeai_multi_agent', multiAgentEl.checked));
@@ -1116,7 +1159,188 @@ Presentation:
 
 
 
-            let busy = false, history = loadChatHistory(), controller = null;
+            const study = loadStudySpace();
+            const currentSession = () => study.sessions.find(s => s.id === study.activeId);
+            let busy = false, history = currentSession().messages, controller = null;
+            let pendingReview = null;
+            let libraryMode = '';
+            function persistStudy() {
+                try { localStorage.setItem(STUDY_DATA_KEY, JSON.stringify(study)); $('studyStorageWarning').hidden = true; return true; }
+                catch (_) {
+                    $('studyStorageWarning').hidden = false;
+                    $('studyStorageWarning').textContent = 'Chưa lưu được dữ liệu. Hãy xuất hội thoại/sổ bài sai trước khi đóng trang. Dữ liệu cũ trong bộ nhớ vẫn được giữ.';
+                    $('draftState').textContent = 'Chưa lưu được dữ liệu';
+                    $('status').textContent = 'Bộ nhớ trình duyệt không đủ hoặc bị chặn. Hãy xuất hội thoại/sổ bài sai để giữ dữ liệu trước khi đóng trang.';
+                    return false;
+                }
+            }
+            function saveChatHistory(items) {
+                currentSession().messages = items.slice(-CHAT_HISTORY_MAX);
+                currentSession().draft = question.value.slice(0, 16000);
+                currentSession().draftImage = pendingChatImagePreview || '';
+                currentSession().updatedAt = Date.now();
+                return persistStudy();
+            }
+            function renderSessionOptions() {
+                $('sessionSel').replaceChildren();
+                [...study.sessions].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt).forEach(session => {
+                    const option = document.createElement('option'); option.value = session.id;
+                    option.textContent = `${session.pinned ? '★ ' : ''}${session.subject} · ${session.title}`;
+                    $('sessionSel').appendChild(option);
+                });
+                $('sessionSel').value = study.activeId;
+                $('mistakeCount').textContent = String(study.mistakes.filter(m => !m.reviewed).length);
+            }
+            function closeLibrary() {
+                libraryMode = ''; $('libraryPane').hidden = true; messages.hidden = false; $('inputArea').hidden = false;
+            }
+            function showLibrary(mode) {
+                if (busy || pendingReview) return;
+                libraryMode = mode; $('libraryPane').hidden = false; messages.hidden = true; $('inputArea').hidden = true;
+                $('libraryTitle').textContent = mode === 'sessions' ? 'Hội thoại theo môn / bài' : 'Sổ bài sai';
+                if (mode === 'sessions') renderSessions(); else renderMistakes();
+            }
+            function renderConversation() {
+                messages.replaceChildren();
+                history.forEach(item => item.image ? addImageMessage(item.image, item.caption || item.content) : addMessage(item.role, item.content));
+                showWelcome();
+                $('historySearch').value = '';
+                followLatest = true;
+            }
+            function switchSession(id) {
+                if (busy || pendingReview || !study.sessions.some(s => s.id === id)) { $('sessionSel').value = study.activeId; return; }
+                currentSession().draft = question.value;
+                if (!saveChatHistory(history)) { $('sessionSel').value = study.activeId; return; }
+                study.activeId = id; history = currentSession().messages;
+                question.value = currentSession().draft || '';
+                pendingChatImagePreview = currentSession().draftImage || null; clearPreview();
+                if (pendingChatImagePreview) { preview.src = pendingChatImagePreview; preview.style.display = 'block'; }
+                hideScrapeActions();
+                persistStudy(); renderSessionOptions(); renderConversation(); closeLibrary();
+                setStatus('Đã mở ' + currentSession().title + '. Ngữ cảnh AI chỉ dùng hội thoại này.');
+            }
+            function makeStudyButton(label, action, extraClass = '') {
+                const button = document.createElement('button'); button.className = 'study-button ' + extraClass;
+                button.type = 'button'; button.textContent = label; button.onclick = action; return button;
+            }
+            function studyText(tag, text, className = '') {
+                const node = document.createElement(tag); node.textContent = text; node.className = className; return node;
+            }
+            function newConversation() {
+                if (busy || pendingReview) return false;
+                if (study.sessions.length >= MAX_SESSIONS) { setStatus('Tối đa 20 hội thoại. Hãy xuất và xóa hội thoại không cần nữa.'); return false; }
+                if (!saveChatHistory(history)) return false;
+                const session = freshSession(); study.sessions.push(session); study.activeId = session.id; history = session.messages;
+                question.value = ''; pendingChatImagePreview = null; clearPreview(); persistStudy(); renderSessionOptions(); renderConversation();
+                showLibrary('sessions'); $('sessionTitleInput')?.focus();
+                return true;
+            }
+            function renderSessions() {
+                const target = $('libraryContent'); target.replaceChildren();
+                target.appendChild(studyText('p', 'Mỗi hội thoại có lịch sử và bản nháp riêng. Dữ liệu lưu trong trình duyệt trên website này; lịch sử cũ được giữ trong “Lịch sử trước đây”.', 'study-muted'));
+                const form = document.createElement('form'); form.className = 'study-form study-card';
+                form.innerHTML = '<label for="sessionTitleInput">Tên hội thoại</label><input id="sessionTitleInput" maxlength="80" required><label for="sessionSubjectInput">Môn học</label><input id="sessionSubjectInput" maxlength="40" placeholder="Toán, Tiếng Anh, Vật lý…" required><div class="study-actions"><button class="study-button primary" type="submit">Lưu tên và môn</button></div>';
+                form.querySelector('#sessionTitleInput').value = currentSession().title;
+                form.querySelector('#sessionSubjectInput').value = currentSession().subject;
+                form.onsubmit = event => {
+                    event.preventDefault(); const title = form.querySelector('#sessionTitleInput').value.trim(); const subject = form.querySelector('#sessionSubjectInput').value.trim();
+                    if (!title || !subject) return;
+                    Object.assign(currentSession(), { title, subject }); persistStudy(); renderSessionOptions(); renderSessions();
+                };
+                target.appendChild(form);
+                [...study.sessions].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt).forEach(session => {
+                    const card = document.createElement('article'); card.className = 'study-card'; card.dataset.sessionId = session.id;
+                    card.appendChild(studyText('h4', `${session.pinned ? '★ ' : ''}${session.title}${session.id === study.activeId ? ' · Đang mở' : ''}`));
+                    card.appendChild(studyText('p', `${session.subject} · ${session.messages.length} tin nhắn`, 'study-muted'));
+                    const actions = document.createElement('div'); actions.className = 'study-actions';
+                    actions.append(makeStudyButton('Mở', () => switchSession(session.id)), makeStudyButton(session.pinned ? 'Bỏ ghim' : 'Ghim', () => {
+                        session.pinned = !session.pinned; persistStudy(); renderSessionOptions(); renderSessions();
+                    }), makeStudyButton('Xóa', () => {
+                        if (!confirm(`Xóa hội thoại “${session.title}”? Lịch sử và bản nháp của hội thoại này sẽ bị xóa.`)) return;
+                        study.sessions = study.sessions.filter(s => s.id !== session.id);
+                        if (!study.sessions.length) study.sessions.push(freshSession());
+                        if (study.activeId === session.id) {
+                            study.activeId = study.sessions[0].id; history = currentSession().messages; question.value = currentSession().draft || '';
+                            pendingChatImagePreview = currentSession().draftImage || null; clearPreview(); renderConversation();
+                        }
+                        persistStudy(); renderSessionOptions(); renderSessions();
+                    }, 'danger'));
+                    card.appendChild(actions); target.appendChild(card);
+                });
+            }
+            function exportMistakes() {
+                const data = { format: 'study-mistakes-v1', exportedAt: new Date().toISOString(), mistakes: study.mistakes };
+                const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+                const link = document.createElement('a'); link.href = url; link.download = 'so-bai-sai.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+            function editMistake(record) {
+                showLibrary('mistakes');
+                const target = $('libraryContent'); target.replaceChildren();
+                target.appendChild(studyText('p', 'Lời giải AI chỉ là tài liệu tham khảo. Ghi rõ lỗi bạn gặp và cách sửa để lần ôn sau có ích hơn.', 'study-muted'));
+                const form = document.createElement('form'); form.id = 'mistakeForm'; form.className = 'study-form study-card';
+                form.innerHTML = '<label for="mistakeSubject">Môn học</label><input id="mistakeSubject" maxlength="40" required><label for="mistakeQuestion">Đề bài</label><textarea id="mistakeQuestion" maxlength="16000" required></textarea><label for="mistakeAnswer">Lời giải tham khảo (có thể sửa)</label><textarea id="mistakeAnswer" maxlength="16000"></textarea><label for="mistakeNote">Mình sai ở đâu? Cách tránh lần sau?</label><textarea id="mistakeNote" maxlength="4000" placeholder="Ví dụ: quên đổi dấu khi chuyển vế…"></textarea><div class="study-actions"><button class="study-button primary" type="submit">Lưu vào sổ</button><button id="cancelMistakeBtn" class="study-button" type="button">Hủy</button></div>';
+                form.querySelector('#mistakeSubject').value = record.subject || currentSession().subject;
+                form.querySelector('#mistakeQuestion').value = record.question;
+                form.querySelector('#mistakeAnswer').value = record.answer;
+                form.querySelector('#mistakeNote').value = record.note || '';
+                form.querySelector('#cancelMistakeBtn').onclick = renderMistakes;
+                form.onsubmit = event => {
+                    event.preventDefault(); const existing = study.mistakes.find(m => m.id === record.id);
+                    if (!existing && study.mistakes.length >= MAX_MISTAKES) { alert('Sổ tối đa 100 bài. Hãy xuất và xóa bài không cần nữa.'); return; }
+                    const updated = { ...record, id: record.id || makeDeviceId(), subject: form.querySelector('#mistakeSubject').value.trim().slice(0, 40),
+                        question: form.querySelector('#mistakeQuestion').value.trim(), answer: form.querySelector('#mistakeAnswer').value.trim(),
+                        note: form.querySelector('#mistakeNote').value.trim(), createdAt: record.createdAt || Date.now(), reviewed: record.reviewed === true };
+                    if (!updated.question || !updated.subject) return;
+                    if (existing) Object.assign(existing, updated); else study.mistakes.unshift(updated);
+                    persistStudy(); renderSessionOptions(); renderMistakes();
+                };
+                target.appendChild(form); form.querySelector('#mistakeNote').focus();
+            }
+            function renderMistakes() {
+                const target = $('libraryContent'); target.replaceChildren();
+                target.appendChild(studyText('p', `${study.mistakes.filter(m => !m.reviewed).length} bài cần ôn · ${study.mistakes.length} bài đã lưu. Lưu tại trình duyệt trên website này.`, 'study-muted'));
+                const search = document.createElement('input'); search.id = 'mistakeSearch'; search.className = 'study-search'; search.placeholder = 'Tìm đề, môn học hoặc ghi chú…'; search.setAttribute('aria-label', 'Tìm trong sổ bài sai');
+                const filter = document.createElement('select'); filter.id = 'mistakeFilter'; filter.className = 'study-search';
+                for (const [value, text] of [['todo', 'Cần ôn'], ['all', 'Tất cả'], ['reviewed', 'Đã ôn']]) { const option = document.createElement('option'); option.value = value; option.textContent = text; filter.appendChild(option); }
+                target.append(search, filter, makeStudyButton('Xuất sổ (.json)', exportMistakes));
+                const list = document.createElement('div'); list.id = 'mistakeList'; target.appendChild(list);
+                const draw = () => {
+                    list.replaceChildren(); const query = search.value.toLocaleLowerCase('vi').trim();
+                    const rows = study.mistakes.filter(m => (filter.value === 'all' || Boolean(m.reviewed) === (filter.value === 'reviewed')) && `${m.subject} ${m.question} ${m.note || ''}`.toLocaleLowerCase('vi').includes(query));
+                    if (!rows.length) list.appendChild(studyText('p', 'Chưa có bài khớp. Bạn có thể lưu bài từ nút “Lưu bài sai” dưới mỗi câu trả lời.', 'study-muted'));
+                    rows.forEach(record => {
+                        const card = document.createElement('article'); card.className = 'study-card'; card.dataset.mistakeId = record.id;
+                        card.appendChild(studyText('h4', `${record.subject} · ${record.reviewed ? 'Đã ôn' : 'Cần ôn'}`));
+                        const problem = document.createElement('div'); problem.className = 'study-exercise';
+                        problem.innerHTML = renderMarkdown(normalizeMathOutput(record.question)); renderMath(problem); card.appendChild(problem);
+                        if (record.image && /^data:image\/jpeg;base64,/i.test(record.image)) { const image = document.createElement('img'); image.className = 'mistake-image'; image.src = record.image; image.alt = 'Ảnh đề đã lưu'; card.appendChild(image); }
+                        if (record.note) card.appendChild(studyText('p', 'Ghi nhớ: ' + record.note, 'study-muted'));
+                        const answer = document.createElement('details'); const solution = document.createElement('div'); solution.className = 'study-exercise';
+                        solution.innerHTML = renderMarkdown(normalizeMathOutput(record.answer)); renderMath(solution);
+                        answer.append(studyText('summary', 'Xem lời giải tham khảo'), solution); card.appendChild(answer);
+                        const actions = document.createElement('div'); actions.className = 'study-actions';
+                        actions.append(makeStudyButton(record.reviewed ? 'Cần ôn lại' : 'Đánh dấu đã ôn', () => { record.reviewed = !record.reviewed; persistStudy(); renderSessionOptions(); renderMistakes(); }),
+                            makeStudyButton('Sửa ghi chú', () => editMistake(record)), makeStudyButton('Ôn với AI', () => {
+                                if (study.sessions.length >= MAX_SESSIONS) { alert('Đã đủ 20 hội thoại. Hãy xóa một hội thoại trước khi ôn.'); return; }
+                                if (!newConversation()) return;
+                                currentSession().title = 'Ôn: ' + record.question.slice(0, 40); currentSession().subject = record.subject;
+                                question.value = 'Hãy gợi ý từng bước cho bài này, chưa đưa đáp án ngay:\n\n' + record.question;
+                                currentSession().draft = question.value; persistStudy(); renderSessionOptions(); closeLibrary(); question.focus();
+                            }), makeStudyButton('Xóa bài', () => {
+                                if (!confirm('Xóa bài này khỏi sổ?')) return;
+                                study.mistakes = study.mistakes.filter(m => m.id !== record.id); persistStudy(); renderSessionOptions(); renderMistakes();
+                            }, 'danger'));
+                        card.appendChild(actions); list.appendChild(card);
+                    });
+                };
+                search.oninput = draw; filter.onchange = draw; draw();
+            }
+            $('sessionSel').onchange = () => switchSession($('sessionSel').value);
+            $('newSessionBtn').onclick = newConversation;
+            $('sessionsBtn').onclick = () => showLibrary('sessions');
+            $('mistakesBtn').onclick = () => showLibrary('mistakes');
+            $('closeLibraryBtn').onclick = closeLibrary;
+            renderSessionOptions();
             let account = null;
             let followLatest = true;
             messages.addEventListener('scroll', () => {
@@ -1178,9 +1402,13 @@ Presentation:
                 setTimeout(() => URL.revokeObjectURL(url), 1000);
                 setStatus('Đã xuất cuộc trò chuyện.');
             };
-            question.value = localStorage.getItem('ioeai_draft') || '';
+            question.value = currentSession().draft || '';
+            persistStudy();
             question.addEventListener('input', () => {
-                try { localStorage.setItem('ioeai_draft', question.value); $('draftState').textContent = 'Đã lưu bản nháp'; } catch (_) { $('draftState').textContent = 'Chưa lưu được bản nháp'; }
+                currentSession().draft = question.value.slice(0, 16000);
+                currentSession().draftImage = pendingChatImagePreview || '';
+                try { localStorage.setItem('ioeai_draft', question.value); } catch (_) {}
+                if (persistStudy()) $('draftState').textContent = 'Đã lưu bản nháp';
             });
             $('quickCaptureBtn').onclick = () => $('capBtn').click();
             $('quickScrapeBtn').onclick = () => $('scrapeBtn').click();
@@ -1191,7 +1419,7 @@ Presentation:
                 if (file.size > 3 * 1024 * 1024) { setStatus('Ảnh tối đa 3 MB. Hãy chọn ảnh nhỏ hơn.'); return; }
                 setBusy(true); await handleImageWithVision(file);
             };
-            let pendingChatImagePreview = null;
+            let pendingChatImagePreview = currentSession().draftImage || null;
             const setStatus = t => {
                 const el = $('status');
                 if (el) el.textContent = t;
@@ -1211,6 +1439,7 @@ Presentation:
                 preview.removeAttribute('src');
                 preview.style.display = 'none';
             }
+            if (pendingChatImagePreview) { preview.src = pendingChatImagePreview; preview.style.display = 'block'; }
 
             function escapeMarkdownHtml(text) {
                 return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -1318,6 +1547,7 @@ Presentation:
             }
 
             function renderAssistantMessage(element, text) {
+                element._studyText = text;
                 element.innerHTML = renderMarkdown(normalizeMathOutput(text));
                 renderMath(element);
                 if (element.classList.contains('bot') && text) {
@@ -1326,7 +1556,18 @@ Presentation:
                         try { await navigator.clipboard.writeText(text); copy.textContent = 'Đã sao chép ✓'; }
                         catch (_) { setStatus('Không truy cập được clipboard. Bạn có thể chọn nội dung để sao chép.'); }
                     };
-                    element.appendChild(copy);
+                    const actions = document.createElement('div'); actions.className = 'message-actions';
+                    const save = document.createElement('button'); save.className = 'study-button save-mistake'; save.textContent = 'Lưu bài sai';
+                    save.onclick = () => {
+                        if (busy) { setStatus('Đợi câu trả lời hoàn tất trước khi lưu bài.'); return; }
+                        let user = element.previousElementSibling;
+                        while (user && !user.classList.contains('user')) user = user.previousElementSibling;
+                        const source = user?._studyText || '';
+                        const existing = study.mistakes.find(m => m.question === source && m.answer === text);
+                        editMistake(existing || { question: source, answer: text, subject: currentSession().subject,
+                            ...(user?._studyImage ? { image: user._studyImage } : {}) });
+                    };
+                    actions.append(copy, save); element.appendChild(actions);
                 }
             }
 
@@ -1347,6 +1588,8 @@ Presentation:
                 messages.querySelector('.welcome')?.remove();
                 const d = document.createElement('div');
                 d.className = 'msg user';
+                d._studyText = caption || 'Ảnh câu hỏi đã gửi.';
+                d._studyImage = /^data:image\/jpeg;base64,/i.test(imageSrc) && imageSrc.length < 300000 ? imageSrc : '';
                 const image = document.createElement('img');
                 image.className = 'msg-image';
                 image.src = imageSrc;
@@ -1371,7 +1614,7 @@ Presentation:
 
             function setBusy(v) {
                 busy = v;
-                ['capBtn','sendBtn','scrapeBtn','quickCaptureBtn','quickScrapeBtn','uploadImageBtn','clearBtn','exportChatBtn'].forEach(id => {
+                ['capBtn','sendBtn','scrapeBtn','quickCaptureBtn','quickScrapeBtn','uploadImageBtn','clearBtn','exportChatBtn','newSessionBtn','sessionsBtn','mistakesBtn','sessionSel'].forEach(id => {
                     const el = $(id);
                     if (el) el.disabled = v;
                 });
@@ -1829,7 +2072,7 @@ Presentation:
             }
 
             async function transcribeImageToInput(file) {
-                pendingChatImagePreview = null;
+                const previousThumbnail = pendingChatImagePreview;
                 controller = new AbortController();
                 $('stopBtn').style.display = 'block';
                 showPreview(file);
@@ -1842,42 +2085,77 @@ Presentation:
                     setStatus('Đã chép đề vào bản nháp. Bạn có thể sửa trước khi gửi.');
                     question.dispatchEvent(new Event('input'));
                 } catch (err) {
+                    pendingChatImagePreview = previousThumbnail;
                     if (err.message === 'AUTH') return;
                     clearPreview();
                     setBusy(false);
                     setStatus(err.name === 'AbortError' ? 'Đã dừng đọc ảnh.' : 'Không đọc được ảnh: ' + (err.message || err));
-                } finally { controller = null; $('stopBtn').style.display = 'none'; setBusy(false); refreshAccount(); }
+                } finally {
+                    controller = null; $('stopBtn').style.display = 'none'; setBusy(false); refreshAccount();
+                    if (pendingChatImagePreview) { preview.src = pendingChatImagePreview; preview.style.display = 'block'; }
+                }
             }
 
-            async function handleImageWithVision(file) {
-                pendingChatImagePreview = null;
-                if (imageModeSel.value !== 'solve') {
-                    await transcribeImageToInput(file);
-                    return;
+            function discardReview() {
+                if (pendingReview?.url) URL.revokeObjectURL(pendingReview.url);
+                pendingReview = null; $('imageReview').hidden = true; $('reviewImage').removeAttribute('src');
+                $('reviewText').value = ''; $('reviewMessage').textContent = '';
+            }
+            async function acceptReview(solve) {
+                if (!pendingReview || busy) return;
+                const edited = $('reviewText').value.trim();
+                if (!edited) { $('reviewMessage').textContent = 'Đề bài không được để trống.'; $('reviewText').focus(); return; }
+                if (edited.length > 16000) { $('reviewMessage').textContent = 'Đề dài quá 16000 ký tự. Hãy rút gọn trước khi gửi.'; return; }
+                const thumbnail = pendingReview.thumbnail;
+                discardReview(); closeLibrary();
+                if (!solve) {
+                    question.value = edited; pendingChatImagePreview = thumbnail;
+                    question.dispatchEvent(new Event('input')); question.focus();
+                    setStatus('Đã đưa đề đã kiểm tra vào bản nháp.'); return;
                 }
+                addImageMessage(thumbnail, edited);
+                question.value = ''; currentSession().draft = ''; currentSession().draftImage = ''; pendingChatImagePreview = null;
+                persistStudy(); localStorage.removeItem('ioeai_draft');
+                await callGroq(edited, edited, modelSel.value, null, thumbnail, edited);
+            }
+            $('discardReviewBtn').onclick = () => { discardReview(); setStatus('Đã bỏ bản chép đề. Bản nháp trước đó được giữ nguyên.'); };
+            $('reviewDraftBtn').onclick = () => acceptReview(false);
+            $('reviewSolveBtn').onclick = () => acceptReview(true);
+            $('imageReview').addEventListener('keydown', event => {
+                if (event.key === 'Escape') { event.preventDefault(); discardReview(); question.focus(); }
+                if (event.key === 'Tab') {
+                    const nodes = [...$('imageReview').querySelectorAll('button,textarea')].filter(node => !node.disabled);
+                    const active = container.activeElement || document.activeElement;
+                    if (event.shiftKey && active === nodes[0]) { event.preventDefault(); nodes.at(-1).focus(); }
+                    else if (!event.shiftKey && active === nodes.at(-1)) { event.preventDefault(); nodes[0].focus(); }
+                }
+            });
+            async function handleImageWithVision(file) {
+                if (imageModeSel.value === 'transcribe') { await transcribeImageToInput(file); return; }
+                controller = new AbortController(); $('stopBtn').style.display = 'block';
                 showPreview(file);
-                setStatus('Sending image to ' + visionSel.value + ' for solving...');
                 try {
-                    const dataUrl = await fileToDataURL(file);
+                    const text = await transcribeImageWithVision(file);
                     const thumbnail = await makeChatImageThumbnail(file);
-                    clearPreview();
+                    if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
                     const caption = question.value.trim();
-                    const prompt = caption || 'Inspect the attached image and infer the user’s intent. If it clearly shows a school exercise, solve it. If it is a general image or conversational question, respond naturally to what the user is asking. If the intent is unclear, briefly describe what is visible and ask what the user wants to know. Never guess unclear diagram information.';
-                    const historyText = caption || 'Người dùng gửi kèm một ảnh câu hỏi.';
-                    addImageMessage(dataUrl, caption);
-                    question.value = '';
-                    pendingChatImagePreview = null;
-                    await callGroq(prompt, historyText, visionSel.value, dataUrl, thumbnail, caption);
+                    pendingReview = { thumbnail, url: URL.createObjectURL(file) };
+                    $('reviewImage').src = pendingReview.url;
+                    $('reviewText').value = (caption ? caption + '\n\n' : '') + text;
+                    $('reviewMessage').textContent = '';
+                    $('imageReview').hidden = false;
+                    $('reviewText').focus();
+                    setStatus('Đã đọc ảnh. Hãy kiểm tra đề trước khi gửi giải.');
                 } catch (err) {
-                    clearPreview();
-                    if (err.message === 'AUTH') return;
-                    setBusy(false);
-                    setStatus('Could not send image to Vision: ' + (err.message || err));
+                    if (err.message !== 'AUTH') setStatus(err.name === 'AbortError' ? 'Đã dừng đọc ảnh.' : 'Không đọc được ảnh: ' + err.message);
+                } finally {
+                    clearPreview(); controller = null; $('stopBtn').style.display = 'none'; setBusy(false); refreshAccount();
+                    if (pendingChatImagePreview) { preview.src = pendingChatImagePreview; preview.style.display = 'block'; }
                 }
             }
 
             async function captureAndAsk() {
-                if (busy || authState !== 'unlocked') return;
+                if (busy || pendingReview || authState !== 'unlocked') return;
                 setBusy(true);
                 setStatus('Capturing screen...');
 
@@ -1985,7 +2263,7 @@ Presentation:
             }
 
             async function doScrape(mode) {
-                if (busy || authState !== 'unlocked') return;
+                if (busy || pendingReview || authState !== 'unlocked') return;
                 setBusy(true);
                 try {
                     if (mode === 'all') {
@@ -2055,7 +2333,7 @@ Presentation:
 
             // ── Paste image ───────────────────────────────────
             async function processPastedImage(blob) {
-                if (busy || authState !== 'unlocked') return;
+                if (busy || pendingReview || authState !== 'unlocked') return;
                 setBusy(true);
                 setStatus('Transcribing pasted image with Vision...');
 
@@ -2100,10 +2378,11 @@ Presentation:
 
             // ── Send text ─────────────────────────────────────
             function sendText() {
-                if (busy || authState !== 'unlocked') return;
+                if (busy || pendingReview || authState !== 'unlocked') return;
                 hideScrapeActions();
                 const raw = question.value.trim();
                 if (!raw) return;
+                if (raw.length > 16000) { setStatus('Câu hỏi tối đa 16000 ký tự. Hãy rút gọn trước khi gửi.'); return; }
                 clearPreview();
                 const attachedImage = pendingChatImagePreview;
                 if (attachedImage) addImageMessage(attachedImage, raw);
@@ -2125,10 +2404,10 @@ Presentation:
                 hideScrapeActions();
                 history = [];
                 pendingChatImagePreview = null;
+                question.value = '';
                 saveChatHistory(history);
                 messages.replaceChildren();
                 showWelcome();
-                question.value = '';
                 localStorage.removeItem('ioeai_draft');
                 clearPreview();
                 setStatus('Đã xóa cuộc trò chuyện.');
