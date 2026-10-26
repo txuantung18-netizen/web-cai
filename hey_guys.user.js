@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      11.0.0
+// @version      11.0.1
 // @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -12,8 +12,8 @@
 // @match        *://violympic.vn/*
 // @match        *://*.violympic.vn/*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
-// @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js
-// @require      https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js
+// @require      https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js
+// @require      https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js
 // @run-at       document-idle
 // @noframes
 // @grant        GM_getValue
@@ -84,6 +84,7 @@
 Identify the subject and follow the language and instructions of the question: answer English exercises in natural English and Vietnamese questions in Vietnamese.
 
 Mathematics and notation:
+- Write formulas as math, never inline code or fenced code. Use a single backslash for LaTeX commands and delimiters; do not append a lone backslash at the end of a line.
 - Use correct LaTeX for every mathematical expression and geometry symbol: \\(...\\) inline, \\[...\\] on a separate display line. Keep ordinary prose outside math delimiters.
 - Explain unfamiliar notation when it first matters. State what a function's input means, its domain, and which symbols are fixed parameters versus variables. For example, in F(n)=2T_n(t), n is the integer input/index, t is a fixed real parameter, T_n is the degree-n Chebyshev polynomial, and F is the function of n obtained by evaluating 2T_n at t.
 - Check domains, absolute values, indices, and conditions before manipulating formulas. Do not silently change a-b into |a-b| unless the stated definition or a justified property permits it; if extending Chebyshev indices to negative integers, explicitly use and justify T_{-n}=T_n.
@@ -640,7 +641,7 @@ Presentation:
             const visionOptions = VISION_MODELS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
 
             container.innerHTML = `
-            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.css">
             <style>
               :host { all: initial; }
               * { box-sizing:border-box; }
@@ -879,7 +880,7 @@ Presentation:
                   </nav>
                   <div id="infoBody">
                     <section class="infoSection active" id="info-updates">
-                      <h3>Bản hiện tại 11.0.0</h3>
+                      <h3>Bản hiện tại 11.0.1</h3>
                       <ul>
                         <li>Giao diện mới lấy cảm hứng từ góc học Đài Loan: nền giấy ấm, xanh ngọc, chế độ sáng/tối và bố cục cho điện thoại.</li>
                         <li>Thêm tìm lịch sử, xuất Markdown, sao chép đáp án, tự lưu bản nháp, tải ảnh và xem hạn mức từ server.</li>
@@ -1213,7 +1214,14 @@ Presentation:
             }
 
             function renderMarkdown(text) {
-                const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+                // Keep display math in one text node: inserting <br> within a
+                // formula splits its delimiters and prevents KaTeX auto-render.
+                const mathBlocks = [];
+                const protectedText = String(text).replace(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`)|\\\[[\s\S]*?\\\]|\$\$[\s\S]*?\$\$/g, (match, code) => {
+                    if (code) return code;
+                    return `DISPLAYMATHTOKEN${mathBlocks.push(match) - 1}END`;
+                });
+                const lines = protectedText.replace(/\r\n?/g, '\n').split('\n');
                 const out = [];
                 const isHr = line => /^\s*(?:---+|___+|\*\*\*+)\s*$/.test(line);
                 const isBlockStart = line => /^\s*(```|~~~|#{1,6}\s|>\s?|[-+*]\s+|\d+[.)]\s+)/.test(line) || isHr(line);
@@ -1265,18 +1273,24 @@ Presentation:
                     while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i])) para.push(lines[i++]);
                     out.push(`<p>${renderInlineMarkdown(para.join('\n')).replace(/\n/g, '<br>')}</p>`);
                 }
-                return out.join('');
+                return out.join('').replace(/DISPLAYMATHTOKEN(\d+)END/g, (_, index) => escapeMarkdownHtml(mathBlocks[Number(index)] || ''));
             }
 
             function normalizeMathOutput(text) {
-                return String(text)
-                    // Some model responses escape display delimiters twice.
-                    .replace(/\\\\\[/g, '\\[').replace(/\\\\\]/g, '\\]')
-                    .replace(/\\\\\(/g, '\\(').replace(/\\\\\)/g, '\\)')
-                    // Remove a stray escaped newline immediately after a display opener.
-                    .replace(/\\\[\\(?=\r?\n)/g, '\\[')
-                    // Convert common HTML-encoded whitespace emitted as plain text.
+                const clean = formula => formula
+                    // Correct double-escaped commands without touching matrix
+                    // row separators (\\), including row-spacing syntax.
+                    .replace(/(?<!\\)\\\\(?=(?:boxed|frac|dfrac|tfrac|sqrt|text|mathrm|mathbf|mathbb|left|right|begin|end|angle|overline|perp|parallel|times|cdot|leq|geq|neq|sum|prod|int|pi|alpha|beta|theta)\b|[,;!:])/g, '\\')
+                    .replace(/(?<!\\)\\[ \t]*(?=\r?\n|$)/g, '')
                     .replace(/&#x0*20;|&#0*32;|&nbsp;/gi, ' ');
+                return String(text).replace(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`)|\\{1,2}\[([\s\S]*?)\\{1,2}\]|\\{1,2}\(([\s\S]*?)\\{1,2}\)|\$\$([\s\S]*?)\$\$|\$([^$\n]+)\$/g,
+                    (match, code, display, inline, dollars, single) => {
+                        if (code) return code;
+                        if (display !== undefined) return '\\[' + clean(display) + '\\]';
+                        if (inline !== undefined) return '\\(' + clean(inline) + '\\)';
+                        if (dollars !== undefined) return '$$' + clean(dollars) + '$$';
+                        return '$' + clean(single) + '$';
+                    });
             }
 
             function renderAssistantMessage(element, text) {
