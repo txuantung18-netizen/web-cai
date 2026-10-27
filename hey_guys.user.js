@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      13.1.0
+// @version      14.1.0
 // @description  Qwen/Gemini Vision, side-by-side image review, study commands, notebooks and readable chat
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -11,6 +11,7 @@
 // @match        *://*.vio.edu.vn/*
 // @match        *://violympic.vn/*
 // @match        *://*.violympic.vn/*
+// @match        https://api-groq-two.vercel.app/user*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
 // @require      https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js
 // @require      https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js
@@ -31,7 +32,7 @@
     console.log('[IOE AI V10.1] Script bắt đầu load...');
 
     const BACKEND_URL = 'https://api-groq-two.vercel.app';
-    const APP_VERSION = '13.1.0';
+    const APP_VERSION = '14.1.0';
     const STUDY_COMMANDS = [
         { name: 'gợi-ý', mode: 'hint', label: 'Chỉ gợi ý', description: 'Một vài gợi mở, không đưa đáp án hay lời giải đầy đủ.' },
         { name: 'giải-thích', mode: 'explain', label: 'Giải thích', description: 'Làm rõ khái niệm bằng lời dễ hiểu và ví dụ.' },
@@ -893,6 +894,7 @@ Presentation:
                 </div>
                 <div class="studio-tools">
                   <button id="settingsBtn" aria-expanded="false" aria-controls="advancedControls">Tùy chỉnh</button>
+                  <button id="userStudioBtn" title="Mở hồ sơ và tính cách trợ lý trên server">Góc của tôi ↗</button>
                   <button id="searchBtn" aria-label="Tìm trong cuộc trò chuyện" aria-expanded="false">Tìm</button>
                   <button id="exportChatBtn" title="Tải cuộc trò chuyện dạng Markdown">Xuất .md</button>
                   <span id="accountUsage" role="status">Hạn mức: chưa tải</span>
@@ -980,16 +982,17 @@ Presentation:
                     <section class="infoSection active" id="info-updates">
                       <div class="release-hero">
                         <div class="release-meta"><span class="release-version">v${APP_VERSION} · Đang chạy</span><time datetime="2026-10-27">27 tháng 10, 2026</time></div>
-                        <h3>Thấy rõ đề.<br>Hiểu đúng ý.</h3>
-                        <p>Đọc ảnh bằng Qwen hoặc Gemini, giữ rõ bảng và cột, rồi đối chiếu đề trong một không gian rộng hơn.</p>
+                        <h3>Một góc riêng.<br>Một cách học của bạn.</h3>
+                        <p>Mở Góc của tôi để chọn tính cách trợ lý, cách giải thích và nhịp học. Tùy chỉnh áp dụng cho câu trả lời tiếp theo.</p>
                       </div>
                       <div class="release-grid">
-                        <article class="release-card"><span class="release-number">01 / GEMINI</span><h4>Thêm một cách nhìn</h4><p>Gemini 3.8 Flash hỗ trợ đọc ảnh và chat/giải bài. Có thể chọn model đọc ảnh khác với model giải.</p></article>
-                        <article class="release-card"><span class="release-number">02 / BẢNG & CỘT</span><h4>Giữ đúng cấu trúc đề</h4><p>Đọc riêng từng cột, giữ bảng và đáp án ghép cặp; đánh dấu phần không rõ thay vì tự đoán dữ kiện.</p></article>
-                        <article class="release-card"><span class="release-number">03 / VIOLYMPIC</span><h4>Lấy rõ ảnh đề gốc</h4><p>Nhận diện hộp thoại điền đáp án có một nút xác nhận, ưu tiên ảnh gốc và giữ nguyên biểu mẫu trên trang.</p></article>
-                        <article class="release-card"><span class="release-number">04 / KHUNG ĐỌC</span><h4>Đủ chỗ để đối chiếu</h4><p>Khung mặc định rộng hơn, nút ⛶ để mở rộng; ảnh và bản chép đặt cạnh nhau trên máy tính, xếp dọc trên điện thoại.</p></article>
+                        <article class="release-card"><span class="release-number">01 / CÁ TÍNH</span><h4>Một người bạn hợp ý</h4><p>Thân thiện, kiên nhẫn, thẳng vào ý hoặc gợi mở; chọn mẫu nhanh rồi chỉnh theo cách bạn thích.</p></article>
+                        <article class="release-card"><span class="release-number">02 / NHỊP HỌC</span><h4>Chủ động cách học</h4><p>Chọn độ chi tiết, ngôn ngữ, ví dụ, giải nghĩa ký hiệu và chế độ chỉ gợi ý mặc định.</p></article>
+                        <article class="release-card"><span class="release-number">03 / ĐỒNG BỘ</span><h4>Mang theo tùy chỉnh</h4><p>Hồ sơ lưu trên server theo mã truy cập. Mở từ userscript để dùng lại phiên, không chiếm thêm thiết bị.</p></article>
+                        <article class="release-card"><span class="release-number">04 / QUYỀN CHỦ ĐỘNG</span><h4>Bạn giữ quyền quyết định</h4><p>Xem trước không dùng lượt, nhập/xuất tùy chỉnh, bỏ thay đổi hoặc xóa hồ sơ để về mặc định.</p></article>
                       </div>
-                      <div class="release-note">Mới trong v13.1: menu / có thứ tự rõ ràng, chuyển động mở nhẹ hơn, viền lấy nét dễ thấy và giao diện nhập câu hỏi mềm hơn. Hiệu ứng có thể tắt trong Tùy chỉnh.</div>
+                      <div class="release-note">Mới trong v14.1: nhập mã tại /user rồi chọn “Xác nhận cùng thiết bị” để dùng lại phiên Tampermonkey trên cùng hồ sơ trình duyệt, kể cả mã chỉ có 1 HWID. Không thêm hoặc reset thiết bị.</div>
+                      <details class="release-history"><summary>v13.1.0 · Gemini, ảnh và khung đọc</summary><ul><li>Chọn Qwen/Gemini cho đọc ảnh, phân tích hoặc giải.</li><li>Đối chiếu ảnh và bản chép hai cột; xem trước bảng và LaTeX.</li><li>Khung chat rộng, mở toàn khung; menu lệnh và hiệu ứng nhẹ hơn.</li></ul></details>
                       <details class="release-history"><summary>v12.1.0 · Lệnh, cỡ chữ và cánh đào</summary><ul><li>Thanh lệnh /gợi-ý, /giải-thích, /kiểm-tra, /tóm-tắt và /giải.</li><li>Cỡ chữ nội dung 12–20; cuốn sách đung đưa, cánh đào và tùy chọn tắt chuyển động.</li></ul></details>
                       <details class="release-history"><summary>v12.0.0 · Sổ bài sai và hội thoại</summary><ul><li>Đọc ảnh, sửa đề rồi mới xác nhận giải; có thể lưu bản nháp để gửi sau.</li><li>Sổ bài sai có ghi chú, trạng thái ôn tập, tìm kiếm và xuất JSON.</li><li>Hội thoại theo môn/bài, ghim, lịch sử và bản nháp độc lập.</li></ul></details>
                       <details class="release-history"><summary>Các cải tiến trong dòng v11</summary>
@@ -1495,6 +1498,21 @@ Presentation:
                 question.setAttribute('aria-activedescendant', 'study-command-' + commandChoices[0].mode);
             }
             $('commandHelpBtn').onclick = () => { if (!$('commandMenu').hidden) hideCommands(); else { updateCommandMenu(true); question.focus(); } };
+            $('userStudioBtn').onclick = () => {
+                const nonce = crypto.randomUUID();
+                const origin = new URL(BACKEND_URL).origin;
+                const popup = window.open(origin + '/user#connect=' + nonce, '_blank');
+                if (!popup) { setStatus('Trình duyệt chặn cửa sổ mới. Cho phép mở cửa sổ để vào Góc của tôi.'); return; }
+                let sent = false;
+                const receive = async event => {
+                    if (sent || event.origin !== origin || event.source !== popup || event.data?.type !== 'ioe-user-ready' || event.data.nonce !== nonce) return;
+                    sent = true; window.removeEventListener('message', receive); clearTimeout(expiry);
+                    const token = await getToken(); const deviceId = await getInstallationId();
+                    if (isTokenValid(token)) popup.postMessage({ type: 'ioe-user-session', nonce, session: { token, deviceId } }, origin);
+                };
+                window.addEventListener('message', receive);
+                const expiry = setTimeout(() => window.removeEventListener('message', receive), 25000);
+            };
             question.setAttribute('aria-controls', 'commandMenu'); question.setAttribute('aria-autocomplete', 'list');
             question.addEventListener('keydown', event => {
                 if ($('commandMenu').hidden || !commandChoices.length) return;
@@ -2701,5 +2719,27 @@ Presentation:
             if (!document.getElementById('ioe-ai-root')) start();
         }, 2000);
     }
-    boot();
+    if (location.origin === new URL(BACKEND_URL).origin && ['/user', '/user.html'].includes(location.pathname)) {
+        let confirming = false;
+        window.addEventListener('message', async event => {
+            if (event.source !== window || event.origin !== location.origin || !/^[a-f0-9-]{36}$/i.test(event.data?.nonce || '')) return;
+            const { type, nonce, code } = event.data;
+            if (type === 'ioe-device-probe') { window.postMessage({ type: 'ioe-device-ready', nonce }, location.origin); return; }
+            if (type !== 'ioe-device-confirm' || confirming || typeof code !== 'string' || !code.trim() || code.length > 256) return;
+            confirming = true;
+            try {
+                if (!window.confirm('Cho phép Góc học tập dùng lại phiên userscript trên trình duyệt này? Chỉ xác nhận khi chính bạn vừa bấm “Xác nhận cùng thiết bị”. Không thêm hoặc reset thiết bị.')) {
+                    window.postMessage({ type: 'ioe-device-result', nonce, error: 'Bạn đã hủy xác nhận.' }, location.origin); return;
+                }
+                const token = await getToken();
+                if (!isTokenValid(token)) throw new Error('Userscript chưa đăng nhập hoặc phiên đã hết hạn. Hãy đăng nhập trên trang học trước.');
+                const deviceId = await getInstallationId();
+                const response = await fetch(BACKEND_URL + '/api/auth', { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, 'X-Device-ID': deviceId }, body: JSON.stringify({ code: code.trim(), deviceId, sameDevice: true }), signal: AbortSignal.timeout(20000) });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.reusedDevice || !data.token) throw new Error(data.error || 'Không xác nhận được thiết bị. Hãy thử lại.');
+                window.postMessage({ type: 'ioe-device-result', nonce, session: { token: data.token, deviceId } }, location.origin);
+            } catch (error) { window.postMessage({ type: 'ioe-device-result', nonce, error: error.message || 'Không xác nhận được thiết bị.' }, location.origin); }
+            finally { confirming = false; }
+        });
+    } else boot();
 })();
