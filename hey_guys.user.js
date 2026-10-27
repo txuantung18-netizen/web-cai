@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      12.0.0
-// @description  Screenshot and paste images, transcribe with Groq Vision, chat, and scrape questions
+// @version      13.1.0
+// @description  Qwen/Gemini Vision, side-by-side image review, study commands, notebooks and readable chat
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @match        *://ioe.vn/*
@@ -18,6 +18,8 @@
 // @noframes
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_xmlhttpRequest
+// @connect      images1.violympic.vn
 // ==/UserScript==
 
 (function () {
@@ -29,7 +31,24 @@
     console.log('[IOE AI V10.1] Script bắt đầu load...');
 
     const BACKEND_URL = 'https://api-groq-two.vercel.app';
-    const APP_VERSION = '12.0.0';
+    const APP_VERSION = '13.1.0';
+    const STUDY_COMMANDS = [
+        { name: 'gợi-ý', mode: 'hint', label: 'Chỉ gợi ý', description: 'Một vài gợi mở, không đưa đáp án hay lời giải đầy đủ.' },
+        { name: 'giải-thích', mode: 'explain', label: 'Giải thích', description: 'Làm rõ khái niệm bằng lời dễ hiểu và ví dụ.' },
+        { name: 'kiểm-tra', mode: 'check', label: 'Kiểm tra bài làm', description: 'Tìm bước sai trong lời giải bạn đã thử.' },
+        { name: 'tóm-tắt', mode: 'summarize', label: 'Tóm tắt', description: 'Rút ra các ý chính từ nội dung bạn cung cấp.' },
+        { name: 'giải', mode: 'solve', label: 'Giải bài', description: 'Đưa kết quả và các bước giải chính.' },
+    ];
+    const commandKey = text => String(text).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').toLowerCase();
+    function parseStudyCommand(text) {
+        const raw = String(text).trim();
+        if (!raw.startsWith('/')) return { mode: 'normal', content: raw };
+        const match = raw.match(/^\/([^\s]*)\s*([\s\S]*)$/);
+        const command = STUDY_COMMANDS.find(item => commandKey(item.name) === commandKey(match?.[1] || ''));
+        if (!command) return { error: 'Lệnh chưa được hỗ trợ. Gõ / để chọn gợi ý, giải thích, kiểm tra, tóm tắt hoặc giải.' };
+        if (!match[2].trim()) return { error: `Nhập nội dung sau /${command.name}.`, command };
+        return { mode: command.mode, content: match[2].trim(), command };
+    }
     const TOKEN_KEY = 'ioe_ai_auth_token_v2';
     const DEVICE_ID_KEY = 'ioe_ai_installation_id_v1';
     const SIGNED_OUT_MARKER = '__IOE_AI_SIGNED_OUT__';
@@ -69,6 +88,7 @@
         ['openai/gpt-oss-120b', 'GPT-OSS 120B'],
         ['qwen/qwen3.8-27b', 'Qwen 3.8 27B'],
         ['openai/gpt-oss-20b', 'GPT-OSS 20B'],
+        ['gemini-3.8-flash', 'Gemini 3.8 Flash'],
     ];
     // Keep the dropdown order unchanged, but use Qwen as the initial model.
     const DEFAULT_MODEL = 'qwen/qwen3.8-27b';
@@ -104,6 +124,7 @@
     }
     const VISION_MODELS = [
         ['qwen/qwen3.8-27b', 'Qwen 3.8 27B Vision'],
+        ['gemini-3.8-flash', 'Gemini 3.8 Flash Vision'],
     ];
 
     const SYSTEM_PROMPT = `You are a helpful study assistant and conversational partner. First identify what the user wants. Solve a problem only when the user asks to solve/calculate/prove/answer an exercise, or the image clearly contains a school exercise. For concept questions (for example, “What is F?”), general questions, greetings, opinions, and ordinary conversation, respond naturally to that request; do not turn it into a fabricated exercise or force an answer-plus-solution format. If intent is ambiguous, answer the most likely conversational request and ask a brief clarifying question only when needed. When solving an exercise, give the result first and then the key reasoning at an appropriate level.
@@ -817,6 +838,26 @@ Presentation:
               #libraryPane{flex:1;min-height:0;overflow:auto;background:var(--paper);padding:16px}#libraryPane[hidden],.review-pane[hidden]{display:none}.library-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.library-head h3{margin:0;font-size:17px;letter-spacing:-.5px}.study-muted{font-size:11px;color:var(--muted);line-height:1.7}.study-card{border:1px solid var(--edge);background:var(--surface);border-radius:12px;padding:13px;margin:10px 0}.study-card h4{font-size:13px;margin:0 0 5px;overflow-wrap:anywhere}.study-form label{display:block;font-size:11px;color:var(--muted);margin:9px 0 4px}.study-form input,.study-form select,.study-search{width:100%;background:var(--surface);color:var(--ink);border:1px solid var(--edge);border-radius:8px;padding:9px;font:12px "Segoe UI",sans-serif}.study-form textarea{height:90px!important;min-height:70px!important;max-height:240px!important}.study-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.study-button.primary{background:#315c4d;color:white;border-color:#315c4d}.study-button.danger{color:var(--seal)}.study-card details{font-size:12px;overflow-wrap:anywhere}.study-card summary{cursor:pointer;color:var(--jade)}.study-card pre{white-space:pre-wrap;font:12px/1.7 "Segoe UI",sans-serif;color:var(--ink)}.mistake-image{display:block;max-width:100%;max-height:130px;border-radius:8px;margin:8px 0}.message-actions{display:flex;gap:6px;flex-wrap:wrap}.message-actions .copy-answer{display:inline-block}
               .review-pane{position:absolute;inset:0;z-index:4;background:var(--paper);color:var(--ink);display:flex;flex-direction:column;padding:18px;overflow:auto}.review-pane h3{font:500 25px Georgia,serif;margin:0}.review-pane img{display:block;max-width:100%;max-height:210px;object-fit:contain;flex-shrink:0;background:white;border:1px solid var(--edge);border-radius:10px;margin:12px 0}.review-pane label{font-size:11px;color:var(--muted)}#panel #reviewText{flex:1;min-height:120px;max-height:none;resize:none;background:var(--surface)}#reviewMessage{color:var(--seal);font-size:11px;min-height:18px;margin-top:6px}
               .study-exercise{font-size:12px;overflow-wrap:anywhere;line-height:1.75}.study-exercise p{margin:7px 0}.study-exercise .katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0}.message-actions{align-items:center}
+              #inputArea{position:relative}.composer-status-row{display:flex;align-items:center;gap:8px}.composer-status-row #status{flex:1}.command-trigger{border:1px solid var(--edge);border-radius:7px;background:var(--soft);color:var(--ink);font:11px "Segoe UI",sans-serif;padding:4px 8px;cursor:pointer}.mode-pill{display:inline-flex;border:1px solid var(--edge);color:var(--jade);background:var(--soft);padding:3px 7px;border-radius:6px;font-size:10px;margin:5px 0}.mode-pill[hidden]{display:none}
+              #advancedControls{max-height:240px;overflow:auto;scrollbar-width:thin}.row select{min-width:0}
+              #panel{width:680px;height:840px;max-width:calc(100vw - 28px);max-height:calc(100dvh - 102px)}#panel.expanded{left:18px!important;right:18px!important;top:16px!important;bottom:84px!important;width:auto!important;height:auto!important;max-width:none!important;max-height:none!important;margin:0 auto}#panel.expanded #messages{padding-left:max(24px,calc((100% - 960px)/2));padding-right:max(24px,calc((100% - 960px)/2))}#panel.expanded #inputArea{padding-left:max(18px,calc((100% - 960px)/2));padding-right:max(18px,calc((100% - 960px)/2))}#panel.expanded #commandMenu{left:max(18px,calc((100% - 960px)/2));right:max(18px,calc((100% - 960px)/2))}
+              .review-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;flex:1;min-height:0;margin-top:12px}.review-source,.review-editor{min-width:0;display:flex;flex-direction:column;min-height:0}.review-source{overflow:auto}.review-column-label{font-size:10px;letter-spacing:1px;color:var(--muted);margin-bottom:8px}.review-pane .review-source img{max-height:none;width:100%;height:auto;object-fit:contain;margin:0;background:#fff}.review-editor #reviewText{width:100%;height:100%;margin:0;flex:1;min-height:180px}#panel .msg table{display:table;width:auto;min-width:40%;max-width:100%;font-size:inherit}.msg{overflow-x:auto}.review-pane{padding:22px}
+              .review-editor-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}.review-editor-toolbar .review-column-label{margin:0}.review-formatted{flex:1;min-height:180px;overflow:auto;border:1px solid var(--edge);background:var(--surface);padding:12px;border-radius:12px}.review-formatted[hidden]{display:none}.review-formatted table{border-collapse:collapse;min-width:100%;font-size:inherit}.review-formatted th,.review-formatted td{border:1px solid var(--edge);padding:8px;text-align:left}.review-formatted th{background:var(--soft)}
+              @media(max-width:700px){#panel{width:calc(100vw - 16px);max-width:calc(100vw - 16px);right:8px;bottom:78px;min-width:0;max-height:calc(100dvh - 90px)}#panel.expanded{left:8px!important;right:8px!important;top:8px!important;bottom:78px!important}.review-columns{display:flex;flex-direction:column;overflow:auto;min-height:210px}.review-source{flex:none;max-height:180px}.review-pane .review-source img{max-height:150px;object-fit:contain}.review-editor{flex:1;min-height:180px}.review-pane{padding:14px}#panel.expanded #messages{padding:12px}#panel.expanded #inputArea{padding:12px}#panel.expanded #commandMenu{left:12px;right:12px}}
+              #commandMenu{position:absolute;left:15px;right:15px;bottom:calc(100% - 5px);z-index:6;padding:7px;background:var(--surface);border:1px solid var(--edge);border-radius:13px;box-shadow:0 14px 40px #18342625;max-height:min(390px,50dvh);overflow:auto}#commandMenu[hidden]{display:none}.command-menu-note{font-size:9px;color:var(--muted);padding:5px 8px}.command-option{display:block;width:100%;text-align:left;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink);padding:9px;cursor:pointer}.command-option strong{display:block;font:600 12px "Segoe UI",sans-serif}.command-option small{display:block;color:var(--muted);font:10px/1.6 "Segoe UI",sans-serif;margin-top:3px}.command-option[aria-selected="true"]{background:var(--soft);border-color:var(--edge)}
+              #panel .msg,#panel .study-exercise,#panel #question,#panel #reviewText,#panel .study-form textarea{font-size:var(--reader-size,14px)}
+              .corner-scene{position:fixed;right:14px;bottom:14px;width:90px;height:112px;pointer-events:none;z-index:2147483647}.corner-scene[hidden]{display:none}.corner-scene #launcher{position:absolute;right:4px;bottom:4px;width:60px;height:58px;padding:7px;border-radius:19px;background:#fffaf0;border:1px solid #9fb29c;box-shadow:0 8px 28px #244c3933;transition:transform .2s ease,box-shadow .2s ease}.corner-scene #launcher:hover{transform:translateY(-3px);box-shadow:0 12px 30px #244c3944}.book-icon{width:44px;height:44px;display:block;margin:auto;transform-origin:50% 85%;animation:book-sway 4.2s ease-in-out infinite}.book-spark{position:absolute;right:5px;top:2px;color:#bf6248;font-size:13px;animation:spark-breathe 3s ease-in-out infinite}
+              .petal{position:absolute;left:17px;top:5px;width:11px;height:7px;border-radius:90% 12% 85% 15%;background:#e9a7ac;opacity:0;animation:petal-drift 8s linear infinite}.petal:nth-child(2){left:50px;top:0;width:9px;height:6px;background:#f1c4c3;animation-delay:-2.2s;animation-duration:10s}.petal:nth-child(3){left:34px;top:12px;animation-delay:-4.6s;animation-duration:9s}.petal:nth-child(4){left:70px;top:4px;width:8px;height:5px;background:#d88d99;animation-delay:-6s;animation-duration:11s}.petal:nth-child(5){left:5px;top:23px;width:8px;height:5px;background:#f1c4c3;animation-delay:-3.7s;animation-duration:9.5s}
+              .petal:nth-child(6){left:61px;top:20px;width:7px;height:5px;background:#efb6bd;animation-delay:-7.2s;animation-duration:12s}
+              @keyframes petal-drift{0%{opacity:0;transform:translate(12px,-8px) rotate(-20deg)}15%{opacity:.7}45%{transform:translate(-9px,30px) rotate(100deg)}80%{opacity:.45}100%{opacity:0;transform:translate(15px,83px) rotate(230deg)}}@keyframes book-sway{0%,100%{transform:rotate(-5deg) translateY(0)}50%{transform:rotate(5deg) translateY(-2px)}}@keyframes spark-breathe{0%,100%{opacity:.45;transform:scale(.85)}50%{opacity:1;transform:scale(1.1)}}@keyframes paper-appear{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+              #panel .msg,.welcome,#libraryPane,#infoBox,#commandMenu{animation:paper-appear .2s ease-out}.study-card,.study-button,.studio-tools button{transition:background .16s ease,border-color .16s ease,transform .16s ease}.study-card:hover{border-color:var(--jade)}
+              #head{position:relative;isolation:isolate;background:linear-gradient(125deg,var(--surface),var(--soft));border-bottom:1px solid var(--edge)}#head:after{content:'';position:absolute;right:100px;top:9px;width:64px;height:2px;border-radius:100%;background:var(--jade);opacity:.35;animation:ink-line 1s ease-out both;pointer-events:none}
+              #panel{box-shadow:0 24px 80px #173e3426,0 2px 12px #173e3414}#inputArea{background:linear-gradient(180deg,var(--surface),var(--paper))}#panel textarea{transition:border-color .2s ease,box-shadow .2s ease}#panel textarea:focus{box-shadow:0 0 0 3px #84a78c24,0 5px 20px #18342609}
+              #commandMenu{counter-reset:command;background:var(--paper)}.command-option{position:relative;padding:11px 12px 11px 48px;min-height:62px;transition:background .18s ease,border-color .18s ease,transform .18s ease;animation:command-arrive .22s ease-out both}.command-option:before{counter-increment:command;content:'0' counter(command);position:absolute;left:12px;top:15px;width:26px;height:26px;border:1px solid var(--edge);border-radius:8px;display:grid;place-items:center;font:12px Georgia,serif;color:var(--jade);background:var(--surface)}.command-option:nth-child(2){animation-delay:.025s}.command-option:nth-child(3){animation-delay:.05s}.command-option:nth-child(4){animation-delay:.075s}.command-option:nth-child(5){animation-delay:.1s}.command-option:hover{background:var(--soft)}.command-option[aria-selected="true"]:before{background:var(--jade);color:var(--paper)}
+              .study-button:active,.studio-tools button:active,.command-trigger:active{transform:scale(.97)}.review-pane{animation:review-arrive .25s ease-out}.review-source img{animation:paper-appear .3s ease-out}button:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--jade);outline-offset:3px}.session-bar{gap:7px}.session-bar select{min-width:0;flex:1}
+              @keyframes command-arrive{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}@keyframes review-arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}@keyframes ink-line{from{opacity:0;transform:scaleX(.2)}to{opacity:.35;transform:scaleX(1)}}
+              :host([data-motion="off"]) *,:host([data-motion="off"]) *::before,:host([data-motion="off"]) *::after,#ioe-ai-root[data-motion="off"] *,#ioe-ai-root[data-motion="off"] *::before,#ioe-ai-root[data-motion="off"] *::after{animation:none!important;transition:none!important}:host([data-motion="off"]) .petal,#ioe-ai-root[data-motion="off"] .petal{display:none}
+              @media(prefers-reduced-motion:reduce){.petal{display:none}*,*::before,*::after{animation:none!important;transition:none!important}}@media(max-width:520px){#commandMenu{max-height:35dvh;left:12px;right:12px}.corner-scene{right:7px;bottom:8px}}
               button:focus-visible{outline:2px solid var(--seal);outline-offset:3px}button:disabled{cursor:not-allowed}#messages .search-hidden{display:none!important}
               @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
               @media(max-width:520px){#panel{right:8px;bottom:76px;width:calc(100vw - 16px);min-width:0;border-radius:18px;max-height:calc(100dvh - 90px)}#head{padding:14px}#messages{padding:10px 12px}.studio-tools{padding:8px 12px;flex-wrap:wrap}#accountUsage{max-width:135px}.welcome h2{font-size:30px}}
@@ -835,12 +876,16 @@ Presentation:
             </div>
 
             <div id="appView">
-              <button id="launcher" title="Mở Trợ lý học tập (Alt+A)" aria-label="Mở trợ lý học tập">學</button>
+              <div id="cornerScene" class="corner-scene">
+                <span class="petal" aria-hidden="true"></span><span class="petal" aria-hidden="true"></span><span class="petal" aria-hidden="true"></span><span class="petal" aria-hidden="true"></span><span class="petal" aria-hidden="true"></span><span class="petal" aria-hidden="true"></span>
+                <button id="launcher" title="Mở Trợ lý học tập (Alt+A)" aria-label="Mở trợ lý học tập" aria-controls="panel" aria-expanded="false"><svg class="book-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 13C18 8 9 8 4 10v27c7-2 14-1 20 3Z" fill="#e4ecda" stroke="#315c4d" stroke-width="1.5" stroke-linejoin="round"/><path d="M24 13c6-5 15-5 20-3v27c-7-2-14-1-20 3Z" fill="#f6e5de" stroke="#315c4d" stroke-width="1.5" stroke-linejoin="round"/><path d="M24 14v25M8 16c5-1 9 0 12 2m-12 4c5-1 9 0 12 2m-12 4c5-1 9 0 12 2m8-12c3-2 7-3 12-2m-12 8c3-2 7-3 12-2m-12 8c3-2 7-3 12-2" stroke="#6c8d71" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg><span class="book-spark" aria-hidden="true">✦</span></button>
+              </div>
               <section id="panel" class="hidden" aria-label="Trợ lý học tập">
                 <div id="head">
                   <div class="studio-brand"><span class="studio-seal" aria-hidden="true">學</span><div><b>Góc học tập</b><small>TAIPEI INSPIRED · STUDY ROOM</small></div></div>
                   <div>
                     <button id="themeBtn" title="Đổi giao diện sáng / tối" aria-label="Đổi giao diện">◐</button>
+                    <button id="expandBtn" title="Mở rộng khung đọc" aria-label="Mở rộng khung đọc" aria-pressed="false">⛶</button>
                     <button id="logoutBtn" title="Đăng xuất">🔓</button>
                     <button id="infoBtn" title="Cập nhật, hướng dẫn sử dụng và điều khoản" aria-label="Thông tin">ⓘ</button>
                     <button id="closeBtn" title="Đóng">×</button>
@@ -859,9 +904,13 @@ Presentation:
                 <div id="messages"></div>
                 <div id="inputArea">
                   <img id="preview" alt="">
-                  <div id="status" role="status" aria-live="polite">Hỏi một câu. Mở thêm một cách hiểu.</div>
+                  <div id="commandMenu" role="listbox" aria-label="Lệnh học tập" hidden></div>
+                  <div class="composer-status-row"><div id="status" role="status" aria-live="polite">Hỏi một câu. Mở thêm một cách hiểu.</div><button id="commandHelpBtn" class="command-trigger" title="Chọn chế độ trả lời">/ Lệnh</button></div>
+                  <div id="commandMode" class="mode-pill" hidden></div>
                   <div class="row"><button class="b" id="quickCaptureBtn" title="Chụp vùng đề bài (Alt+S)">Chụp đề</button><button class="b" id="quickScrapeBtn">Lấy câu hỏi</button><button class="b" id="uploadImageBtn">Tải ảnh</button><input type="file" id="imageFileInput" accept="image/png,image/jpeg,image/webp,image/gif" hidden></div>
                   <div id="advancedControls" hidden>
+                  <div class="row"><label class="lbl" for="fontSizeSel">Cỡ chữ nội dung:</label><select id="fontSizeSel"><option value="12">Nhỏ · 12</option><option value="14">Vừa · 14</option><option value="16">Lớn · 16</option><option value="18">Rất lớn · 18</option><option value="20">Dễ đọc · 20</option></select></div>
+                  <div class="row"><label class="chk"><input id="motionEffects" type="checkbox"><span>Hiệu ứng nhẹ · tự tắt khi hệ thống giảm chuyển động</span></label></div>
                   <div class="row">
                     <span class="lbl">Model:</span>
                     <select id="modelSel">${modelOptions}</select>
@@ -873,8 +922,10 @@ Presentation:
                   <div class="row">
                     <span class="lbl">Image mode:</span>
                     <select id="imageModeSel" title="Choose what Vision does with an image">
-                      <option value="review">Đọc ảnh → kiểm tra đề → giải</option>
+                      <option value="review">Đọc ảnh → kiểm tra 2 cột → giải</option>
                       <option value="transcribe">Chỉ chép đề vào bản nháp</option>
+                      <option value="analyze">Phân tích ảnh, chưa giải</option>
+                      <option value="direct-solve">Giải trực tiếp ảnh (bỏ bước sửa)</option>
                     </select>
                   </div>
                   <div class="row">
@@ -909,10 +960,9 @@ Presentation:
                   </div>
                 </div>
                 <section id="imageReview" class="review-pane" hidden role="dialog" aria-modal="true" aria-labelledby="reviewTitle">
-                  <div class="library-head"><h3 id="reviewTitle">Kiểm tra đề trước khi giải</h3><button id="discardReviewBtn" class="study-button" aria-label="Hủy bản chép đề">×</button></div>
+                  <div class="library-head"><h3 id="reviewTitle">Kiểm tra đề trước khi giải</h3><div class="study-actions" style="margin:0;flex-wrap:nowrap"><button id="reviewExpandBtn" class="study-button" aria-label="Mở rộng phần đối chiếu ảnh" aria-pressed="false">⛶</button><button id="discardReviewBtn" class="study-button" aria-label="Hủy bản chép đề">×</button></div></div>
                   <p class="study-muted">Đối chiếu số, dấu và ký hiệu với ảnh. Nội dung bạn sửa bên dưới sẽ được gửi cho AI giải; AI chưa giải đề này.</p>
-                  <img id="reviewImage" alt="Ảnh đề gốc để đối chiếu">
-                  <label for="reviewText">Đề bài và ghi chú hình vẽ</label><textarea id="reviewText" maxlength="16000"></textarea>
+                  <div class="review-columns"><div class="review-source"><div class="review-column-label">ẢNH GỐC · <a id="reviewOriginalLink" target="_blank" rel="noopener noreferrer" style="color:var(--jade)">Xem ảnh lớn</a></div><img id="reviewImage" alt="Ảnh đề gốc để đối chiếu"></div><div class="review-editor"><div class="review-editor-toolbar"><label for="reviewText" class="review-column-label">ĐỀ BÀI & GHI CHÚ HÌNH VẼ</label><button id="reviewPreviewBtn" class="study-button" aria-pressed="false">Xem định dạng</button></div><textarea id="reviewText" maxlength="16000"></textarea><div id="reviewFormatted" class="study-exercise review-formatted" tabindex="0" aria-label="Bản chép đã định dạng" hidden></div></div></div>
                   <div id="reviewMessage" role="status"></div>
                   <div class="study-actions"><button id="reviewSolveBtn" class="study-button primary">Xác nhận và giải</button><button id="reviewDraftBtn" class="study-button">Đưa vào bản nháp</button></div>
                   <p class="study-muted">Đọc ảnh dùng một lượt Vision. Xác nhận giải dùng thêm một lượt chat.</p>
@@ -929,17 +979,19 @@ Presentation:
                   <div id="infoBody">
                     <section class="infoSection active" id="info-updates">
                       <div class="release-hero">
-                        <div class="release-meta"><span class="release-version">v${APP_VERSION} · Đang chạy</span><time datetime="2026-10-26">26 tháng 10, 2026</time></div>
-                        <h3>Mỗi bài sai.<br>Một lần hiểu sâu.</h3>
-                        <p>Kiểm tra đề trước khi giải, ghi lại điều cần sửa và giữ từng môn học trong một hội thoại riêng.</p>
+                        <div class="release-meta"><span class="release-version">v${APP_VERSION} · Đang chạy</span><time datetime="2026-10-27">27 tháng 10, 2026</time></div>
+                        <h3>Thấy rõ đề.<br>Hiểu đúng ý.</h3>
+                        <p>Đọc ảnh bằng Qwen hoặc Gemini, giữ rõ bảng và cột, rồi đối chiếu đề trong một không gian rộng hơn.</p>
                       </div>
                       <div class="release-grid">
-                        <article class="release-card"><span class="release-number">01 / ĐỌC ẢNH</span><h4>Đúng đề rồi mới giải</h4><p>Đối chiếu ảnh và bản chép, sửa số hoặc ký hiệu rồi xác nhận. Có thể giữ lại bản nháp để gửi sau.</p></article>
-                        <article class="release-card"><span class="release-number">02 / SỔ BÀI SAI</span><h4>Nhớ vì sao mình sai</h4><p>Lưu đề và lời giải tham khảo, ghi nguyên nhân, đánh dấu đã ôn và mở buổi ôn với AI.</p></article>
-                        <article class="release-card"><span class="release-number">03 / HỘI THOẠI</span><h4>Mỗi môn một góc riêng</h4><p>Đặt tên, chọn môn, ghim và chuyển hội thoại. Mỗi hội thoại có lịch sử và bản nháp độc lập.</p></article>
-                        <article class="release-card"><span class="release-number">04 / LƯU GIỮ</span><h4>Giữ lại hành trình học</h4><p>Lịch sử cũ được giữ khi nâng cấp. Xuất hội thoại Markdown hoặc sổ bài sai JSON để lưu bản sao.</p></article>
+                        <article class="release-card"><span class="release-number">01 / GEMINI</span><h4>Thêm một cách nhìn</h4><p>Gemini 3.8 Flash hỗ trợ đọc ảnh và chat/giải bài. Có thể chọn model đọc ảnh khác với model giải.</p></article>
+                        <article class="release-card"><span class="release-number">02 / BẢNG & CỘT</span><h4>Giữ đúng cấu trúc đề</h4><p>Đọc riêng từng cột, giữ bảng và đáp án ghép cặp; đánh dấu phần không rõ thay vì tự đoán dữ kiện.</p></article>
+                        <article class="release-card"><span class="release-number">03 / VIOLYMPIC</span><h4>Lấy rõ ảnh đề gốc</h4><p>Nhận diện hộp thoại điền đáp án có một nút xác nhận, ưu tiên ảnh gốc và giữ nguyên biểu mẫu trên trang.</p></article>
+                        <article class="release-card"><span class="release-number">04 / KHUNG ĐỌC</span><h4>Đủ chỗ để đối chiếu</h4><p>Khung mặc định rộng hơn, nút ⛶ để mở rộng; ảnh và bản chép đặt cạnh nhau trên máy tính, xếp dọc trên điện thoại.</p></article>
                       </div>
-                      <div class="release-note">Đây là phiên bản đang chạy trên trang này. Sau khi cập nhật trong Tampermonkey, hãy tải lại trang học để dùng phiên bản mới.</div>
+                      <div class="release-note">Mới trong v13.1: menu / có thứ tự rõ ràng, chuyển động mở nhẹ hơn, viền lấy nét dễ thấy và giao diện nhập câu hỏi mềm hơn. Hiệu ứng có thể tắt trong Tùy chỉnh.</div>
+                      <details class="release-history"><summary>v12.1.0 · Lệnh, cỡ chữ và cánh đào</summary><ul><li>Thanh lệnh /gợi-ý, /giải-thích, /kiểm-tra, /tóm-tắt và /giải.</li><li>Cỡ chữ nội dung 12–20; cuốn sách đung đưa, cánh đào và tùy chọn tắt chuyển động.</li></ul></details>
+                      <details class="release-history"><summary>v12.0.0 · Sổ bài sai và hội thoại</summary><ul><li>Đọc ảnh, sửa đề rồi mới xác nhận giải; có thể lưu bản nháp để gửi sau.</li><li>Sổ bài sai có ghi chú, trạng thái ôn tập, tìm kiếm và xuất JSON.</li><li>Hội thoại theo môn/bài, ghim, lịch sử và bản nháp độc lập.</li></ul></details>
                       <details class="release-history"><summary>Các cải tiến trong dòng v11</summary>
                       <ul>
                         <li>Giao diện mới lấy cảm hứng từ góc học Đài Loan: nền giấy ấm, xanh ngọc, chế độ sáng/tối và bố cục cho điện thoại.</li>
@@ -956,6 +1008,8 @@ Presentation:
                       </details>
                     </section>
                     <section class="infoSection" id="info-guide">
+                      <h3>Thanh lệnh và tùy chỉnh</h3>
+                      <ul><li>Gõ / ở đầu câu hỏi hoặc bấm “/ Lệnh”. Dùng ↑ ↓ để chọn, Enter/Tab để chèn và Esc để đóng danh sách. Có thể gõ không dấu, ví dụ /goi-y.</li><li>/gợi-ý: chỉ gợi mở; /giải-thích: làm rõ khái niệm; /kiểm-tra: xem bài làm bạn đã thử; /tóm-tắt: rút ý chính; /giải: giải đầy đủ. Nhập câu hỏi hoặc nội dung sau lệnh.</li><li>Trong Tùy chỉnh, đổi cỡ chữ nội dung hoặc bật/tắt hiệu ứng nhẹ. Hiệu ứng tự tắt khi hệ thống bật giảm chuyển động.</li></ul>
                       <h3>Bắt đầu</h3>
                       <ol>
                         <li>Nhập mã truy cập được cấp để mở trợ lý. Phiên đăng nhập được lưu trên trình duyệt tối đa 30 ngày.</li>
@@ -964,10 +1018,13 @@ Presentation:
                       </ol>
                       <h3>Lấy câu hỏi và dùng Vision</h3>
                       <ul>
+                        <li>Chọn Qwen hoặc Gemini ở mục Vision. Chọn riêng model chat để giải đề đã kiểm tra. Gemini chạy độc lập; nhóm cộng tác nhiều AI vẫn dùng các model Groq.</li>
+                        <li>Nút ⛶ trên đầu khung hoặc màn hình đối chiếu mở rộng không gian đọc. “Xem ảnh lớn” mở ảnh gốc để kiểm tra chữ nhỏ.</li>
                         <li>“Lấy cả trang”: tự lấy câu hỏi từ bố cục được hỗ trợ; nếu đang mở hộp thoại câu hỏi Violympic, trợ lý chụp toàn hộp thoại gồm cả đáp án dạng ảnh.</li>
                         <li>“Chụp & Hỏi AI”: chụp trang, kéo chọn vùng cần đọc rồi gửi ảnh cho Vision.</li>
                         <li>Mặc định ảnh đi qua bước “Kiểm tra đề”: sửa bản chép khi cần rồi chọn “Xác nhận và giải”. Đọc ảnh dùng một lượt Vision, giải dùng thêm một lượt chat.</li>
                         <li>Chế độ “Chỉ chép đề” đưa nội dung vào bản nháp; chưa gửi cho AI giải cho đến khi bạn bấm Gửi.</li>
+                        <li>“Phân tích ảnh” mô tả dữ kiện và bố cục, chưa giải. “Giải trực tiếp ảnh” bỏ bước sửa đề và dùng một lượt chat. Hai chế độ này gửi ảnh thẳng cho model Vision đã chọn.</li>
                         <li>Nếu nội dung trang không được nhận diện, dùng “Chụp & Hỏi AI” hoặc dán ảnh vào khung chat.</li>
                       </ul>
                       <h3>Hội thoại và sổ bài sai</h3>
@@ -1144,15 +1201,22 @@ Presentation:
 
             const storedModel = localStorage.getItem('ioeai_model');
             modelSel.value = MODELS.some(([id]) => id === storedModel) ? storedModel : DEFAULT_MODEL;
-            modelSel.addEventListener('change', () => localStorage.setItem('ioeai_model', modelSel.value));
+            modelSel.addEventListener('change', () => { localStorage.setItem('ioeai_model', modelSel.value); syncMultiAgentModel(); });
             const storedVision = localStorage.getItem('ioeai_vision_model');
             visionSel.value = VISION_MODELS.some(([id]) => id === storedVision) ? storedVision : VISION_MODELS[0][0];
             visionSel.addEventListener('change', () => localStorage.setItem('ioeai_vision_model', visionSel.value));
             const savedImageMode = localStorage.getItem('ioeai_image_mode');
-            imageModeSel.value = savedImageMode === 'transcribe' ? 'transcribe' : 'review';
+            imageModeSel.value = ['transcribe', 'analyze', 'direct-solve'].includes(savedImageMode) ? savedImageMode : 'review';
             imageModeSel.addEventListener('change', () => localStorage.setItem('ioeai_image_mode', imageModeSel.value));
             multiAgentEl.checked = readFlag('ioeai_multi_agent', false);
             multiAgentEl.addEventListener('change', () => writeFlag('ioeai_multi_agent', multiAgentEl.checked));
+            function syncMultiAgentModel() {
+                const gemini = modelSel.value === 'gemini-3.8-flash';
+                if (gemini) multiAgentEl.checked = false;
+                multiAgentEl.disabled = gemini;
+                multiAgentEl.title = gemini ? 'Gemini chạy độc lập; cộng tác nhiều AI dùng nhóm model Groq.' : '';
+            }
+            syncMultiAgentModel();
             const savedRounds = localStorage.getItem('ioeai_multi_agent_rounds');
             multiAgentRoundsEl.value = savedRounds === '2' ? '2' : '1';
             multiAgentRoundsEl.addEventListener('change', () => localStorage.setItem('ioeai_multi_agent_rounds', multiAgentRoundsEl.value));
@@ -1206,6 +1270,7 @@ Presentation:
                 showWelcome();
                 $('historySearch').value = '';
                 followLatest = true;
+                updateCommandMenu();
             }
             function switchSession(id) {
                 if (busy || pendingReview || !study.sessions.some(s => s.id === id)) { $('sessionSel').value = study.activeId; return; }
@@ -1324,7 +1389,7 @@ Presentation:
                                 if (study.sessions.length >= MAX_SESSIONS) { alert('Đã đủ 20 hội thoại. Hãy xóa một hội thoại trước khi ôn.'); return; }
                                 if (!newConversation()) return;
                                 currentSession().title = 'Ôn: ' + record.question.slice(0, 40); currentSession().subject = record.subject;
-                                question.value = 'Hãy gợi ý từng bước cho bài này, chưa đưa đáp án ngay:\n\n' + record.question;
+                                question.value = '/gợi-ý Hãy gợi ý từng bước cho bài này, chưa đưa đáp án ngay:\n\n' + record.question;
                                 currentSession().draft = question.value; persistStudy(); renderSessionOptions(); closeLibrary(); question.focus();
                             }), makeStudyButton('Xóa bài', () => {
                                 if (!confirm('Xóa bài này khỏi sổ?')) return;
@@ -1358,8 +1423,14 @@ Presentation:
                     account = await response.json();
                     $('accountUsage').textContent = `${account.requestsToday}/${account.dailyLimit || '∞'} lượt · ${account.multiAgentRemaining}/3 cộng tác`;
                     $('accountUsage').title = `Chat ${account.chatToday}/${account.chatLimit || '∞'} · Ảnh ${account.visionToday}/${account.visionLimit || '∞'}. Đặt lại lúc 07:00 giờ Việt Nam (00:00 UTC).`;
-                    for (const option of modelSel.options) option.disabled = account.blockedModels.includes(option.value);
+                    for (const option of modelSel.options) option.disabled = account.blockedModels.includes(option.value) || (Array.isArray(account.availableModels) && !account.availableModels.includes(option.value));
+                    for (const option of visionSel.options) option.disabled = account.blockedModels.includes(option.value) || (Array.isArray(account.visionModels) && !account.visionModels.includes(option.value));
                 } catch (_) { $('accountUsage').textContent = 'Hạn mức: chưa tải được'; }
+            }
+            function studyModeReady(mode) {
+                if (mode === 'normal' || account?.studyModes?.includes(mode)) return true;
+                setStatus(account ? 'Chế độ này chưa sẵn sàng trên dịch vụ. Hãy thử lại sau khi dịch vụ được cập nhật.' : 'Đang tải chế độ học. Bạn thử gửi lại sau ít giây nhé.');
+                refreshAccount(); return false;
             }
             function showWelcome() {
                 if (messages.querySelector('.msg')) return;
@@ -1380,6 +1451,63 @@ Presentation:
                 $('infoBox').dataset.theme = panel.dataset.theme;
                 localStorage.setItem('ioeai_theme', panel.dataset.theme);
             };
+            const storedFontSize = Number(localStorage.getItem('ioeai_font_size'));
+            const fontSize = [12, 14, 16, 18, 20].includes(storedFontSize) ? storedFontSize : 14;
+            panel.style.setProperty('--reader-size', fontSize + 'px'); $('fontSizeSel').value = String(fontSize);
+            $('fontSizeSel').onchange = () => {
+                const value = Number($('fontSizeSel').value);
+                if (![12, 14, 16, 18, 20].includes(value)) return;
+                panel.style.setProperty('--reader-size', value + 'px'); localStorage.setItem('ioeai_font_size', String(value));
+            };
+            const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+            let wantedMotion = localStorage.getItem('ioeai_motion_effects') !== 'off';
+            function applyMotionPreference() {
+                const enabled = wantedMotion && !reducedMotion.matches;
+                root.dataset.motion = enabled ? 'on' : 'off';
+                $('motionEffects').checked = enabled; $('motionEffects').disabled = reducedMotion.matches;
+            }
+            $('motionEffects').onchange = () => { wantedMotion = $('motionEffects').checked; localStorage.setItem('ioeai_motion_effects', wantedMotion ? 'on' : 'off'); applyMotionPreference(); };
+            reducedMotion.addEventListener?.('change', applyMotionPreference); applyMotionPreference();
+            let commandChoices = [], commandIndex = 0;
+            function hideCommands() { $('commandMenu').hidden = true; $('commandHelpBtn').setAttribute('aria-expanded', 'false'); question.removeAttribute('aria-activedescendant'); }
+            function chooseCommand(command) {
+                const content = question.value.trimStart().replace(/^\/\S*\s*/, '');
+                question.value = '/' + command.name + ' ' + content;
+                question.dispatchEvent(new Event('input')); hideCommands(); question.focus(); question.selectionStart = question.selectionEnd = question.value.length;
+            }
+            function updateCommandMenu(force = false) {
+                const raw = question.value.trimStart(); const token = raw.match(/^\/([^\s]*)$/);
+                const selected = parseStudyCommand(raw).command;
+                $('commandMode').hidden = !selected; $('commandMode').textContent = selected ? selected.label : '';
+                if (!token && !force) { hideCommands(); return; }
+                const query = token && !force ? commandKey(token[1]) : '';
+                commandChoices = STUDY_COMMANDS.filter(command => commandKey(command.name).includes(query)); commandIndex = 0;
+                const menu = $('commandMenu'); menu.replaceChildren();
+                if (!commandChoices.length) { hideCommands(); return; }
+                commandChoices.forEach((command, index) => {
+                    const button = document.createElement('button'); button.type = 'button'; button.className = 'command-option'; button.id = 'study-command-' + command.mode;
+                    button.setAttribute('role', 'option'); button.setAttribute('aria-selected', String(index === commandIndex));
+                    button.append(studyText('strong', '/' + command.name + ' · ' + command.label), studyText('small', command.description));
+                    button.onclick = () => chooseCommand(command); menu.appendChild(button);
+                });
+                menu.appendChild(studyText('div', '↑ ↓ chọn · Enter hoặc Tab để chèn · Esc đóng', 'command-menu-note'));
+                menu.hidden = false; $('commandHelpBtn').setAttribute('aria-expanded', 'true');
+                question.setAttribute('aria-activedescendant', 'study-command-' + commandChoices[0].mode);
+            }
+            $('commandHelpBtn').onclick = () => { if (!$('commandMenu').hidden) hideCommands(); else { updateCommandMenu(true); question.focus(); } };
+            question.setAttribute('aria-controls', 'commandMenu'); question.setAttribute('aria-autocomplete', 'list');
+            question.addEventListener('keydown', event => {
+                if ($('commandMenu').hidden || !commandChoices.length) return;
+                if (['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) {
+                    event.preventDefault(); event.stopImmediatePropagation();
+                    if (event.key === 'Escape') { hideCommands(); return; }
+                    if (event.key === 'Enter' || event.key === 'Tab') { chooseCommand(commandChoices[commandIndex]); return; }
+                    commandIndex = (commandIndex + (event.key === 'ArrowDown' ? 1 : -1) + commandChoices.length) % commandChoices.length;
+                    $('commandMenu').querySelectorAll('[role="option"]').forEach((option, index) => option.setAttribute('aria-selected', String(index === commandIndex)));
+                    const id = 'study-command-' + commandChoices[commandIndex].mode; question.setAttribute('aria-activedescendant', id);
+                    $(id)?.scrollIntoView({ block: 'nearest' });
+                }
+            });
             $('settingsBtn').onclick = () => {
                 const controls = $('advancedControls'); controls.hidden = !controls.hidden;
                 $('settingsBtn').setAttribute('aria-expanded', String(!controls.hidden));
@@ -1403,8 +1531,10 @@ Presentation:
                 setStatus('Đã xuất cuộc trò chuyện.');
             };
             question.value = currentSession().draft || '';
+            updateCommandMenu();
             persistStudy();
             question.addEventListener('input', () => {
+                updateCommandMenu();
                 currentSession().draft = question.value.slice(0, 16000);
                 currentSession().draftImage = pendingChatImagePreview || '';
                 try { localStorage.setItem('ioeai_draft', question.value); } catch (_) {}
@@ -1415,7 +1545,7 @@ Presentation:
             $('uploadImageBtn').onclick = () => $('imageFileInput').click();
             $('imageFileInput').onchange = async event => {
                 const file = event.target.files[0]; event.target.value = '';
-                if (!file || busy || authState !== 'unlocked') return;
+                if (!file || busy || pendingReview || authState !== 'unlocked') return;
                 if (file.size > 3 * 1024 * 1024) { setStatus('Ảnh tối đa 3 MB. Hãy chọn ảnh nhỏ hơn.'); return; }
                 setBusy(true); await handleImageWithVision(file);
             };
@@ -1479,6 +1609,7 @@ Presentation:
                 const isHr = line => /^\s*(?:---+|___+|\*\*\*+)\s*$/.test(line);
                 const isBlockStart = line => /^\s*(```|~~~|#{1,6}\s|>\s?|[-+*]\s+|\d+[.)]\s+)/.test(line) || isHr(line);
                 const cells = line => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+                const isTableStart = index => index + 1 < lines.length && lines[index].includes('|') && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1]);
                 for (let i = 0; i < lines.length;) {
                     const line = lines[i];
                     if (!line.trim()) { i++; continue; }
@@ -1523,7 +1654,7 @@ Presentation:
                         continue;
                     }
                     const para = [line]; i++;
-                    while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i])) para.push(lines[i++]);
+                    while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i]) && !isTableStart(i)) para.push(lines[i++]);
                     out.push(`<p>${renderInlineMarkdown(para.join('\n')).replace(/\n/g, '<br>')}</p>`);
                 }
                 return out.join('').replace(/DISPLAYMATHTOKEN(\d+)END/g, (_, index) => escapeMarkdownHtml(mathBlocks[Number(index)] || ''));
@@ -1621,28 +1752,28 @@ Presentation:
                 if (modelSel) modelSel.disabled = v;
                 if (visionSel) visionSel.disabled = v;
                 if (imageModeSel) imageModeSel.disabled = v;
-                if (multiAgentEl) multiAgentEl.disabled = v;
+                if (multiAgentEl) multiAgentEl.disabled = v || modelSel.value === 'gemini-3.8-flash';
                 if (multiAgentRoundsEl) multiAgentRoundsEl.disabled = v;
             }
 
             const openPanel = () => {
                 panel.classList.remove('hidden');
                 const l = $('launcher');
-                if (l) l.style.display = 'none';
+                if (l) { l.setAttribute('aria-expanded', 'true'); l.setAttribute('aria-label', 'Thu gọn trợ lý học tập'); }
                 refreshAccount();
                 question.focus();
             };
             const closePanel = () => {
                 panel.classList.add('hidden');
                 const l = $('launcher');
-                if (l) l.style.display = 'block';
+                if (l) { l.setAttribute('aria-expanded', 'false'); l.setAttribute('aria-label', 'Mở trợ lý học tập'); }
             };
 
             const launcherEl = $('launcher');
             const closeBtnEl = $('closeBtn');
             const logoutBtnEl = $('logoutBtn');
             const infoBtnEl = $('infoBtn'), infoModalEl = $('infoModal'), closeInfoBtnEl = $('closeInfoBtn');
-            if (launcherEl) launcherEl.onclick = openPanel;
+            if (launcherEl) launcherEl.onclick = () => panel.classList.contains('hidden') ? openPanel() : closePanel();
             if (closeBtnEl) closeBtnEl.onclick = closePanel;
             const closeInfo = () => infoModalEl && infoModalEl.classList.remove('visible');
             if (infoBtnEl) infoBtnEl.onclick = () => infoModalEl && infoModalEl.classList.add('visible');
@@ -1665,10 +1796,25 @@ Presentation:
             try {
                 const savedSize = JSON.parse(localStorage.getItem('ioeai_panel_size') || 'null');
                 if (savedSize && savedSize.width && savedSize.height) {
-                    panel.style.width = savedSize.width;
-                    panel.style.height = savedSize.height;
+                    const legacySmall = parseFloat(savedSize.width) <= 470 && innerWidth >= 760;
+                    panel.style.width = legacySmall ? '680px' : savedSize.width;
+                    panel.style.height = legacySmall ? '840px' : savedSize.height;
                 }
             } catch (_) {}
+            panel.classList.toggle('expanded', readFlag('ioeai_panel_expanded', false));
+            $('expandBtn').setAttribute('aria-pressed', String(panel.classList.contains('expanded')));
+            $('expandBtn').onclick = () => {
+                const expanded = panel.classList.toggle('expanded'); writeFlag('ioeai_panel_expanded', expanded);
+                $('expandBtn').setAttribute('aria-pressed', String(expanded));
+                $('reviewExpandBtn').setAttribute('aria-pressed', String(expanded));
+                $('expandBtn').setAttribute('aria-label', expanded ? 'Thu lại khung đọc' : 'Mở rộng khung đọc');
+            };
+            window.addEventListener('resize', () => {
+                if (panel.classList.contains('hidden') || panel.classList.contains('expanded')) return;
+                const rect = panel.getBoundingClientRect();
+                if (rect.left < 8 || rect.right > innerWidth - 8) { panel.style.left = Math.max(8, Math.min(innerWidth - rect.width - 8, rect.left)) + 'px'; panel.style.right = 'auto'; }
+                if (rect.top < 8 || rect.bottom > innerHeight - 78) { panel.style.top = Math.max(8, Math.min(innerHeight - rect.height - 82, rect.top)) + 'px'; panel.style.bottom = 'auto'; }
+            });
             if (logoutBtnEl) logoutBtnEl.onclick = () => {
                 if (busy) return;
                 if (!confirm('Đăng xuất khỏi trợ lý AI?')) return;
@@ -1689,6 +1835,7 @@ Presentation:
 
             // Drag any panel edge or corner to resize.
             const getResizeEdges = e => {
+                if (panel.classList.contains('expanded')) return null;
                 const r = panel.getBoundingClientRect(), edge = 8;
                 if (e.target.closest('button, input, select, textarea')) return null;
                 const edges = {
@@ -1743,6 +1890,7 @@ Presentation:
             if (headEl) {
                 let drag = false, ox = 0, oy = 0;
                 headEl.addEventListener('pointerdown', e => {
+                    if (panel.classList.contains('expanded')) return;
                     if (e.target.closest('button') || getResizeEdges(e)) return;
                     drag = true;
                     const r = panel.getBoundingClientRect();
@@ -1868,6 +2016,15 @@ Presentation:
                 r.onerror = () => rej(new Error('Không thể đọc được ảnh.'));
                 r.readAsDataURL(f);
             });
+            async function visionImageData(file) {
+                if (visionSel.value !== 'gemini-3.8-flash' || !(file.type === 'image/gif' || /\.gif$/i.test(file.name || ''))) return fileToDataURL(file);
+                // Gemini accepts PNG/JPEG/WebP. Read the first GIF frame locally.
+                const image = await loadImageFromFile(file); const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
+                const scale = Math.min(1, 2200 / width, 2200 / height);
+                const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
+                const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                return fileToDataURL(await canvasToFile(canvas));
+            }
 
             const loadImageFromFile = f => new Promise((res, rej) => {
                 const url = URL.createObjectURL(f);
@@ -1905,10 +2062,14 @@ Presentation:
                 });
             }
             // GROQ VISION TRANSCRIPTION
-            async function transcribeImageWithVision(file) {
-                const dataUrl = await fileToDataURL(file);
-                setStatus('Transcribing image with Groq Vision...');
-                const res = await apiFetch('/api/vision', { image: dataUrl });
+            async function transcribeImageWithVision(file, sourceContext = '') {
+                if (visionSel.value === 'gemini-3.8-flash' && !account?.visionModels?.includes('gemini-3.8-flash')) {
+                    await refreshAccount();
+                    if (!account?.visionModels?.includes('gemini-3.8-flash')) throw new Error('Gemini Vision chưa sẵn sàng trên dịch vụ. Hãy chọn Qwen hoặc cập nhật cấu hình Gemini.');
+                }
+                const dataUrl = await visionImageData(file);
+                setStatus('Đang đọc ảnh bằng ' + visionSel.options[visionSel.selectedIndex].text + '…');
+                const res = await apiFetch('/api/vision', { image: dataUrl, model: visionSel.value, context: sourceContext });
                 if (res.status === 401) {
                     await handleAuthFailure('Session expired. Please enter the access code again.');
                     throw new Error('AUTH');
@@ -1923,8 +2084,12 @@ Presentation:
             }
 
             // CHAT
-            async function callGroq(userContent, historyText, model, imageDataUrl = null, historyImage = '', historyCaption = '') {
-                const useMultiAgent = multiAgentEl.checked && !imageDataUrl;
+            async function callGroq(userContent, historyText, model, imageDataUrl = null, historyImage = '', historyCaption = '', forcedStudyMode = null) {
+                const studyRequest = parseStudyCommand(typeof userContent === 'string' ? userContent : '');
+                if (studyRequest.error) { setStatus(studyRequest.error); return; }
+                if (forcedStudyMode && (!studyRequest.command || forcedStudyMode === 'analyze')) studyRequest.mode = forcedStudyMode;
+                if (!studyModeReady(studyRequest.mode)) return;
+                const useMultiAgent = multiAgentEl.checked && !imageDataUrl && model !== 'gemini-3.8-flash';
                 if (useMultiAgent && account && account.multiAgentRemaining <= 0) {
                     setStatus('Daily multi-agent limit reached (3 runs). Use a single model or try again tomorrow.');
                     return;
@@ -1932,19 +2097,20 @@ Presentation:
                 setBusy(true);
                 const stopBtn = $('stopBtn');
                 if (stopBtn) stopBtn.style.display = 'block';
-                const answer = addMessage('assistant', '⏳ Đang suy nghĩ...');
+                const answer = addMessage('assistant', studyRequest.mode === 'hint' ? 'Đang tìm một gợi ý nhỏ để bạn tự làm…' : '⏳ Đang suy nghĩ...');
                 let fullText = '';
                 controller = new AbortController();
 
                 const messagesForBackend = [
                     { role: 'system', content: SYSTEM_PROMPT },
                     ...history.slice(-CHAT_CONTEXT_MAX).map(({ role, content }) => ({ role, content })),
-                    { role: 'user', content: typeof userContent === 'string' ? userContent : '' },
+                    { role: 'user', content: studyRequest.content },
                 ];
 
                 const body = {
                     messages: messagesForBackend,
                     model,
+                    studyMode: studyRequest.mode,
                     multiAgent: useMultiAgent,
                     ...(useMultiAgent ? { multiAgentMaxRevisions: Number(multiAgentRoundsEl.value) || 1 } : {}),
                     ...(imageDataUrl ? { image: imageDataUrl } : {}),
@@ -2033,7 +2199,7 @@ Presentation:
                     );
                     if (history.length > CHAT_HISTORY_MAX) history = history.slice(-CHAT_HISTORY_MAX);
                     saveChatHistory(history);
-                    setStatus('Đã trả lời · Lịch sử được lưu trên thiết bị này.');
+                    setStatus(studyRequest.mode === 'hint' ? 'Đã gợi ý. Bạn thử bước tiếp theo nhé.' : 'Đã trả lời · Lịch sử được lưu trên thiết bị này.');
                 } catch (err) {
                     if (err.name === 'AbortError') {
                         renderAssistantMessage(answer, (fullText || '') + '\n\nStopped.');
@@ -2071,13 +2237,13 @@ Presentation:
                 question.scrollTop = question.scrollHeight;
             }
 
-            async function transcribeImageToInput(file) {
+            async function transcribeImageToInput(file, sourceContext = '') {
                 const previousThumbnail = pendingChatImagePreview;
                 controller = new AbortController();
                 $('stopBtn').style.display = 'block';
                 showPreview(file);
                 try {
-                    const text = await transcribeImageWithVision(file);
+                    const text = await transcribeImageWithVision(file, sourceContext);
                     pendingChatImagePreview = await makeChatImageThumbnail(file);
                     clearPreview();
                     setBusy(false);
@@ -2099,6 +2265,9 @@ Presentation:
             function discardReview() {
                 if (pendingReview?.url) URL.revokeObjectURL(pendingReview.url);
                 pendingReview = null; $('imageReview').hidden = true; $('reviewImage').removeAttribute('src');
+                $('reviewOriginalLink').removeAttribute('href');
+                $('reviewFormatted').replaceChildren(); $('reviewFormatted').hidden = true; $('reviewText').hidden = false;
+                $('reviewPreviewBtn').textContent = 'Xem định dạng'; $('reviewPreviewBtn').setAttribute('aria-pressed', 'false');
                 $('reviewText').value = ''; $('reviewMessage').textContent = '';
             }
             async function acceptReview(solve) {
@@ -2106,6 +2275,9 @@ Presentation:
                 const edited = $('reviewText').value.trim();
                 if (!edited) { $('reviewMessage').textContent = 'Đề bài không được để trống.'; $('reviewText').focus(); return; }
                 if (edited.length > 16000) { $('reviewMessage').textContent = 'Đề dài quá 16000 ký tự. Hãy rút gọn trước khi gửi.'; return; }
+                const command = parseStudyCommand(edited);
+                if (solve && command.error) { $('reviewMessage').textContent = command.error; return; }
+                if (solve && !studyModeReady(command.mode)) { $('reviewMessage').textContent = 'Chế độ này chưa sẵn sàng trên dịch vụ. Bản chép đề được giữ nguyên.'; return; }
                 const thumbnail = pendingReview.thumbnail;
                 discardReview(); closeLibrary();
                 if (!solve) {
@@ -2121,6 +2293,13 @@ Presentation:
             $('discardReviewBtn').onclick = () => { discardReview(); setStatus('Đã bỏ bản chép đề. Bản nháp trước đó được giữ nguyên.'); };
             $('reviewDraftBtn').onclick = () => acceptReview(false);
             $('reviewSolveBtn').onclick = () => acceptReview(true);
+            $('reviewExpandBtn').onclick = () => $('expandBtn').click();
+            $('reviewPreviewBtn').onclick = () => {
+                const show = $('reviewFormatted').hidden;
+                if (show) { $('reviewFormatted').innerHTML = renderMarkdown(normalizeMathOutput($('reviewText').value)); renderMath($('reviewFormatted')); }
+                $('reviewFormatted').hidden = !show; $('reviewText').hidden = show;
+                $('reviewPreviewBtn').textContent = show ? 'Sửa văn bản' : 'Xem định dạng'; $('reviewPreviewBtn').setAttribute('aria-pressed', String(show));
+            };
             $('imageReview').addEventListener('keydown', event => {
                 if (event.key === 'Escape') { event.preventDefault(); discardReview(); question.focus(); }
                 if (event.key === 'Tab') {
@@ -2130,17 +2309,38 @@ Presentation:
                     else if (!event.shiftKey && active === nodes.at(-1)) { event.preventDefault(); nodes[0].focus(); }
                 }
             });
-            async function handleImageWithVision(file) {
-                if (imageModeSel.value === 'transcribe') { await transcribeImageToInput(file); return; }
+            async function handleImageWithVision(file, sourceContext = '') {
+                hideCommands();
+                if (imageModeSel.value === 'transcribe') { await transcribeImageToInput(file, sourceContext); return; }
+                if (['analyze', 'direct-solve'].includes(imageModeSel.value)) {
+                    const analyze = imageModeSel.value === 'analyze';
+                    const forcedMode = analyze ? 'analyze' : 'solve';
+                    if (!studyModeReady(forcedMode)) { setBusy(false); return; }
+                    try {
+                        const caption = question.value.trim();
+                        let prompt = caption || (analyze ? 'Phân tích nội dung ảnh: giữ rõ bảng/cột, dữ kiện và hình vẽ; đánh dấu phần không rõ. Chưa giải bài hoặc đưa đáp án.' : 'Đọc kỹ ảnh, giữ đúng bảng/cột và dữ kiện hình vẽ, rồi giải bài. Nêu rõ phần không đọc được thay vì đoán.');
+                        let parsed = parseStudyCommand(prompt);
+                        if (parsed.error && parsed.command) { prompt += ' Hãy đọc bài trong ảnh.'; parsed = parseStudyCommand(prompt); }
+                        if (parsed.error) { setBusy(false); setStatus(parsed.error); return; }
+                        if (!studyModeReady(analyze ? 'analyze' : parsed.command ? parsed.mode : 'solve')) { setBusy(false); return; }
+                        const dataUrl = await visionImageData(file); const thumbnail = await makeChatImageThumbnail(file);
+                        addImageMessage(thumbnail, caption || (analyze ? 'Phân tích ảnh đã gửi.' : 'Giải bài trong ảnh.'));
+                        question.value = ''; pendingChatImagePreview = null; currentSession().draft = ''; currentSession().draftImage = ''; persistStudy(); clearPreview();
+                        await callGroq(prompt + (sourceContext ? '\n\nThông tin bố cục trên trang: ' + sourceContext : ''), caption || (analyze ? 'Phân tích ảnh đã gửi.' : 'Giải bài trong ảnh.'), visionSel.value, dataUrl, thumbnail, caption, forcedMode);
+                    } catch (error) { setBusy(false); setStatus('Không xử lý được ảnh: ' + error.message); }
+                    return;
+                }
                 controller = new AbortController(); $('stopBtn').style.display = 'block';
                 showPreview(file);
                 try {
-                    const text = await transcribeImageWithVision(file);
+                    const text = await transcribeImageWithVision(file, sourceContext);
                     const thumbnail = await makeChatImageThumbnail(file);
                     if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
                     const caption = question.value.trim();
                     pendingReview = { thumbnail, url: URL.createObjectURL(file) };
                     $('reviewImage').src = pendingReview.url;
+                    $('reviewOriginalLink').href = pendingReview.url;
+                    $('reviewExpandBtn').setAttribute('aria-pressed', String(panel.classList.contains('expanded')));
                     $('reviewText').value = (caption ? caption + '\n\n' : '') + text;
                     $('reviewMessage').textContent = '';
                     $('imageReview').hidden = false;
@@ -2239,14 +2439,59 @@ Presentation:
             function findVisibleQuestionDialog() {
                 return Array.from(document.querySelectorAll('.MuiDialogContent-root')).find(el => {
                     const rect = el.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0 &&
-                        el.querySelector('.tiptapRender.questionRender') &&
-                        el.querySelectorAll('button').length >= 2;
+                    const question = el.querySelector('.questionRender');
+                    const style = getComputedStyle(el);
+                    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && !el.closest('[aria-hidden="true"]') && question &&
+                        (question.querySelector('img,math,mjx-container') || question.textContent.trim()) &&
+                        (el.querySelector('form input, input[placeholder*="Đáp án"], input[type="radio"], input[type="checkbox"]') || el.querySelectorAll('button').length >= 2);
                 }) || null;
             }
 
+            function questionImageUrl(raw) {
+                try {
+                    const url = new URL(raw, location.href);
+                    return url.protocol === 'https:' && url.hostname === 'images1.violympic.vn' && !url.port && !url.username && !url.password ? url.href : null;
+                } catch (_) { return null; }
+            }
+            async function originalQuestionImage(raw) {
+                const url = questionImageUrl(raw);
+                if (!url) throw new Error('Ảnh không thuộc máy chủ đề bài được hỗ trợ.');
+                let blob;
+                if (typeof GM_xmlhttpRequest === 'function') {
+                    blob = await new Promise((resolve, reject) => {
+                        GM_xmlhttpRequest({ method: 'GET', url, responseType: 'blob', anonymous: true, timeout: 12000,
+                            onload: response => response.status >= 200 && response.status < 300 ? resolve(response.response) : reject(new Error('Không tải được ảnh đề gốc.')),
+                            onerror: () => reject(new Error('Không truy cập được máy chủ ảnh.')),
+                            ontimeout: () => reject(new Error('Tải ảnh đề quá thời gian.')) });
+                    });
+                } else {
+                    const response = await fetch(url, { credentials: 'omit', signal: AbortSignal.timeout(12000) });
+                    if (!response.ok) throw new Error('Không tải được ảnh đề gốc.');
+                    blob = await response.blob();
+                }
+                if (!blob || !blob.size || blob.size > 8 * 1024 * 1024) throw new Error('Ảnh đề không hợp lệ hoặc quá lớn.');
+                const file = new File([blob], 'violympic-original.png', { type: blob.type || 'image/png' });
+                const image = await loadImageFromFile(file);
+                const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
+                if (blob.size <= 3 * 1024 * 1024 && width <= 2200 && height <= 2200 && ['image/png', 'image/jpeg', 'image/webp'].includes(blob.type)) return file;
+                const scale = Math.min(1, 2200 / width, 2200 / height);
+                const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
+                const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                return canvasToFile(canvas);
+            }
+
             async function captureQuestionDialog(dialog) {
+                const question = dialog.querySelector('.questionRender');
+                const images = [...dialog.querySelectorAll('img')];
+                if (question && images.length === 1 && question.contains(images[0]) && !question.textContent.trim() && questionImageUrl(images[0].currentSrc || images[0].src)) {
+                    setStatus('Đang lấy ảnh đề gốc để giữ rõ chữ và bảng…');
+                    return originalQuestionImage(images[0].currentSrc || images[0].src);
+                }
                 if (typeof html2canvas !== 'function') throw new Error('html2canvas is unavailable');
+                const replacements = new Map();
+                const trusted = [...new Set(images.map(image => questionImageUrl(image.currentSrc || image.src)).filter(Boolean))];
+                if (trusted.length > 8) throw new Error('Đề có quá nhiều ảnh. Hãy chụp vùng cần đọc.');
+                await Promise.all(trusted.map(async url => replacements.set(url, await fileToDataURL(await originalQuestionImage(url)))));
                 root.style.visibility = 'hidden';
                 try {
                     await wait(80);
@@ -2255,6 +2500,15 @@ Presentation:
                         backgroundColor: '#ffffff',
                         scale: Math.min(window.devicePixelRatio || 1, 2),
                         imageTimeout: 5000,
+                        onclone: clone => {
+                            clone.querySelectorAll('img').forEach(image => {
+                                const inline = replacements.get(image.currentSrc || image.src);
+                                if (inline) { image.removeAttribute('srcset'); image.src = inline; }
+                            });
+                            clone.querySelectorAll('.MuiDialogContent-root p').forEach(node => {
+                                if (/^Còn lại:\s*\d+:\d+/.test(node.textContent.trim())) node.style.visibility = 'hidden';
+                            });
+                        },
                     });
                     return await canvasToFile(shot);
                 } finally {
@@ -2272,11 +2526,11 @@ Presentation:
                             setStatus('Capturing the full question dialog...');
                             try {
                                 const file = await captureQuestionDialog(dialog);
-                                await handleImageWithVision(file);
+                                const fillAnswer = Boolean(dialog.querySelector('form input:not([type="radio"]):not([type="checkbox"]), input[placeholder*="Đáp án"]'));
+                                await handleImageWithVision(file, fillAnswer ? 'Dạng trả lời trên trang: nhập đáp án vào một ô trống. Không tự điền hoặc gửi biểu mẫu.' : 'Giữ nguyên các lựa chọn đáp án và bố cục hiện trên trang.');
                             } catch (err) {
-                                setStatus('Could not capture the dialog; switching to manual region selection.');
                                 setBusy(false);
-                                await captureAndAsk();
+                                setStatus('Không lấy được ảnh đề: ' + err.message + ' Bạn có thể dán ảnh chụp đề bằng Ctrl+V hoặc chọn Chụp đề.');
                             }
                             return;
                         }
@@ -2359,7 +2613,7 @@ Presentation:
 
             document.addEventListener('paste', e => {
                 if (authState !== 'unlocked') return;
-                if (busy) return;
+                if (busy || pendingReview) return;
                 const cd = e.clipboardData;
                 if (!cd) return;
                 const items = cd.items || [];
@@ -2383,12 +2637,16 @@ Presentation:
                 const raw = question.value.trim();
                 if (!raw) return;
                 if (raw.length > 16000) { setStatus('Câu hỏi tối đa 16000 ký tự. Hãy rút gọn trước khi gửi.'); return; }
+                const command = parseStudyCommand(raw);
+                if (command.error) { setStatus(command.error); return; }
+                if (!studyModeReady(command.mode)) return;
                 clearPreview();
                 const attachedImage = pendingChatImagePreview;
                 if (attachedImage) addImageMessage(attachedImage, raw);
                 else addMessage('user', raw);
                 pendingChatImagePreview = null;
                 question.value = '';
+                question.dispatchEvent(new Event('input'));
                 localStorage.removeItem('ioeai_draft');
                 callGroq(raw, raw, modelSel.value, null, attachedImage || '', attachedImage ? raw : '');
             }
