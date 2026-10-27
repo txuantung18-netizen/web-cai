@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trợ lý học tập - IOE / VioEdu / Violympic
 // @namespace    https://ioe.vn/
-// @version      14.1.0
+// @version      14.1.1
 // @description  Qwen/Gemini Vision, side-by-side image review, study commands, notebooks and readable chat
 // @updateURL    https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
 // @downloadURL  https://raw.githubusercontent.com/txuantung18-netizen/web-cai/main/hey_guys.user.js
@@ -16,6 +16,7 @@
 // @require      https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js
 // @require      https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/auto-render.min.js
 // @run-at       document-idle
+// @sandbox      DOM
 // @noframes
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -32,7 +33,7 @@
     console.log('[IOE AI V10.1] Script bắt đầu load...');
 
     const BACKEND_URL = 'https://api-groq-two.vercel.app';
-    const APP_VERSION = '14.1.0';
+    const APP_VERSION = '14.1.1';
     const STUDY_COMMANDS = [
         { name: 'gợi-ý', mode: 'hint', label: 'Chỉ gợi ý', description: 'Một vài gợi mở, không đưa đáp án hay lời giải đầy đủ.' },
         { name: 'giải-thích', mode: 'explain', label: 'Giải thích', description: 'Làm rõ khái niệm bằng lời dễ hiểu và ví dụ.' },
@@ -991,7 +992,7 @@ Presentation:
                         <article class="release-card"><span class="release-number">03 / ĐỒNG BỘ</span><h4>Mang theo tùy chỉnh</h4><p>Hồ sơ lưu trên server theo mã truy cập. Mở từ userscript để dùng lại phiên, không chiếm thêm thiết bị.</p></article>
                         <article class="release-card"><span class="release-number">04 / QUYỀN CHỦ ĐỘNG</span><h4>Bạn giữ quyền quyết định</h4><p>Xem trước không dùng lượt, nhập/xuất tùy chỉnh, bỏ thay đổi hoặc xóa hồ sơ để về mặc định.</p></article>
                       </div>
-                      <div class="release-note">Mới trong v14.1: nhập mã tại /user rồi chọn “Xác nhận cùng thiết bị” để dùng lại phiên Tampermonkey trên cùng hồ sơ trình duyệt, kể cả mã chỉ có 1 HWID. Không thêm hoặc reset thiết bị.</div>
+                      <div class="release-note">v14.1.1 sửa nhận diện Tampermonkey tải chậm và tin nhắn từ môi trường tiện ích. Nút xác nhận tại /user cho phép kiểm tra lại, không còn bị xám vô thời hạn khi chưa thấy userscript.</div>
                       <details class="release-history"><summary>v13.1.0 · Gemini, ảnh và khung đọc</summary><ul><li>Chọn Qwen/Gemini cho đọc ảnh, phân tích hoặc giải.</li><li>Đối chiếu ảnh và bản chép hai cột; xem trước bảng và LaTeX.</li><li>Khung chat rộng, mở toàn khung; menu lệnh và hiệu ứng nhẹ hơn.</li></ul></details>
                       <details class="release-history"><summary>v12.1.0 · Lệnh, cỡ chữ và cánh đào</summary><ul><li>Thanh lệnh /gợi-ý, /giải-thích, /kiểm-tra, /tóm-tắt và /giải.</li><li>Cỡ chữ nội dung 12–20; cuốn sách đung đưa, cánh đào và tùy chọn tắt chuyển động.</li></ul></details>
                       <details class="release-history"><summary>v12.0.0 · Sổ bài sai và hội thoại</summary><ul><li>Đọc ảnh, sửa đề rồi mới xác nhận giải; có thể lưu bản nháp để gửi sau.</li><li>Sổ bài sai có ghi chú, trạng thái ôn tập, tìm kiếm và xuất JSON.</li><li>Hội thoại theo môn/bài, ghim, lịch sử và bản nháp độc lập.</li></ul></details>
@@ -2722,7 +2723,7 @@ Presentation:
     if (location.origin === new URL(BACKEND_URL).origin && ['/user', '/user.html'].includes(location.pathname)) {
         let confirming = false;
         window.addEventListener('message', async event => {
-            if (event.source !== window || event.origin !== location.origin || !/^[a-f0-9-]{36}$/i.test(event.data?.nonce || '')) return;
+            if ((event.source !== window && event.source !== null) || event.origin !== location.origin || !/^[a-f0-9-]{36}$/i.test(event.data?.nonce || '')) return;
             const { type, nonce, code } = event.data;
             if (type === 'ioe-device-probe') { window.postMessage({ type: 'ioe-device-ready', nonce }, location.origin); return; }
             if (type !== 'ioe-device-confirm' || confirming || typeof code !== 'string' || !code.trim() || code.length > 256) return;
@@ -2741,5 +2742,6 @@ Presentation:
             } catch (error) { window.postMessage({ type: 'ioe-device-result', nonce, error: error.message || 'Không xác nhận được thiết bị.' }, location.origin); }
             finally { confirming = false; }
         });
+        window.postMessage({ type: 'ioe-device-available' }, location.origin);
     } else boot();
 })();
